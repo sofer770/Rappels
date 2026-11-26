@@ -4845,24 +4845,6 @@ function urlBase64ToUint8Array(base64String) {
     return { ok: true };
   }
 
-  // כפתור בדיקה זמני בפינת המסך
-  window.addEventListener('load', () => {
-    const btn = document.createElement('button');
-    btn.textContent = '🔔 בדיקת Push';
-    btn.style.cssText = 'position:fixed;bottom:14px;left:14px;z-index:99999;background:#16a34a;color:#fff;border:none;border-radius:999px;padding:8px 14px;font-size:13px;font-weight:bold;box-shadow:0 2px 8px rgba(0,0,0,.25);cursor:pointer;';
-    btn.onclick = async () => {
-      btn.textContent = 'שולח...';
-      const { sub, error } = await ensurePushSubscription();
-      if (error) { alert('❌ ' + error); btn.textContent = '🔔 בדיקת Push'; return; }
-      const inOneMin = new Date(Date.now() + 65000).toISOString();
-      const res = await sendToSupabase('בדיקת תזכורת', 'מעולה! ההתראה מהשרת עובדת!', inOneMin, sub);
-      if (res.error) alert('❌ ' + res.error);
-      else alert('✅ נשלח לשרת! סגור עכשיו את האפליקציה ונעל את המסך — ההתראה תגיע בעוד דקה.');
-      btn.textContent = '🔔 בדיקת Push';
-    };
-    document.body.appendChild(btn);
-  });
-
   // סנכרון אוטומטי של תזכורות חדשות
   const syncedIds = new Set(JSON.parse(localStorage.getItem('synced_push_ids') || '[]'));
   const origSetItem = localStorage.setItem.bind(localStorage);
