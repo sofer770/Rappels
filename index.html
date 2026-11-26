@@ -4798,8 +4798,7 @@ url:e,reason:"blocked_domain_not_allowlisted"},b.parentOrigin);throw new DOMExce
   const SUPABASE_URL = 'https://exkskcrywyzqsnlvbgls.supabase.co';
   const SUPABASE_ANON_KEY = 'qzoxbFgoRl0PHNFqmkOh5YP97mvhWDJILZd8Rln2LB8';
   const VAPID_PUBLIC_KEY = 'BOp_tzSr9SuBVRX86P5M8NNjhRSDFfbpgnC_ylBRxObVQEGRlQ7cQv11_PvQm6662mIHztzeiEunw3yR0JPXdqc';
-
-  function urlBase64ToUint8Array(base64String) {
+function urlBase64ToUint8Array(base64String) {
     const padding = '='.repeat((4 - base64String.length % 4) % 4);
     const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
     const rawData = atob(base64);
@@ -4807,78 +4806,97 @@ url:e,reason:"blocked_domain_not_allowlisted"},b.parentOrigin);throw new DOMExce
   }
 
   async function ensurePushSubscription() {
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return null;
-    if (Notification.permission !== 'granted') return null;
-
-    const reg = await navigator.serviceWorker.ready;
-    let sub = await reg.pushManager.getSubscription();
-    if (!sub) {
-      sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
-      });
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      return { error: 'הדפדפן לא תומך בהתראות Push (באייפון חייבים להתקין קודם למסך הבית)' };
     }
-    return sub;
+    if (Notification.permission !== 'granted') {
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') return { error: 'לא ניתן אישור להתראות בטלפון' };
+    }
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      let sub = await reg.pushManager.getSubscription();
+      if (!sub) {
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY.trim())
+        });
+      }
+      return { sub };
+    } catch (e) {
+      return { error: 'שגיאה ברישום להתראות: ' + e.message };
+    }
   }
 
-  // רישום אוטומטי ברגע שהמשתמש מאשר התראות
-  document.addEventListener('click', (e) => {
-    if (e.target && e.target.textContent && e.target.textContent.includes('אפשר התראות')) {
-      setTimeout(ensurePushSubscription, 1500);
+  async function sendToSupabase(title, body, remindAtISO, sub) {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/push_reminders`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SUPABASE_ANON_KEY.trim(),
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY.trim()}`
+      },
+      body: JSON.stringify({ title, body, remind_at: remindAtISO, subscription: sub.toJSON() })
+    });
+    if (!res.ok) {
+      const txt = await res.text();
+      return { error: `שגיאת שרת (${res.status}): ${txt}` };
     }
-  });
-  window.addEventListener('load', () => setTimeout(ensurePushSubscription, 2000));
+    return { ok: true };
+  }
 
-  // סנכרון אוטומטי של תזכורות חדשות ל-Supabase
+  // כפתור בדיקה זמני בפינת המסך
+  window.addEventListener('load', () => {
+    const btn = document.createElement('button');
+    btn.textContent = '🔔 בדיקת Push';
+    btn.style.cssText = 'position:fixed;bottom:14px;left:14px;z-index:99999;background:#16a34a;color:#fff;border:none;border-radius:999px;padding:8px 14px;font-size:13px;font-weight:bold;box-shadow:0 2px 8px rgba(0,0,0,.25);cursor:pointer;';
+    btn.onclick = async () => {
+      btn.textContent = 'שולח...';
+      const { sub, error } = await ensurePushSubscription();
+      if (error) { alert('❌ ' + error); btn.textContent = '🔔 בדיקת Push'; return; }
+      const inOneMin = new Date(Date.now() + 65000).toISOString();
+      const res = await sendToSupabase('בדיקת תזכורת', 'מעולה! ההתראה מהשרת עובדת!', inOneMin, sub);
+      if (res.error) alert('❌ ' + res.error);
+      else alert('✅ נשלח לשרת! סגור עכשיו את האפליקציה ונעל את המסך — ההתראה תגיע בעוד דקה.');
+      btn.textContent = '🔔 בדיקת Push';
+    };
+    document.body.appendChild(btn);
+  });
+
+  // סנכרון אוטומטי של תזכורות חדשות
   const syncedIds = new Set(JSON.parse(localStorage.getItem('synced_push_ids') || '[]'));
   const origSetItem = localStorage.setItem.bind(localStorage);
 
   localStorage.setItem = function(key, value) {
     origSetItem(key, value);
+    if (key === 'synced_push_ids') return;
     try {
       const parsed = JSON.parse(value);
-      if (Array.isArray(parsed)) {
-        syncRemindersToServer(parsed);
-      }
+      const list = Array.isArray(parsed) ? parsed : (parsed?.reminders || parsed?.items || null);
+      if (Array.isArray(list)) syncRemindersToServer(list);
     } catch (e) {}
   };
 
   async function syncRemindersToServer(items) {
-    const sub = await ensurePushSubscription();
+    if (Notification.permission !== 'granted') return;
+    const { sub } = await ensurePushSubscription();
     if (!sub) return;
 
     const now = Date.now();
     for (const item of items) {
-      const id = item.id || (item.title + item.date + item.time);
-      if (!id || syncedIds.has(id) || item.completed) continue;
+      if (!item || item.completed || item.done) continue;
+      const rawDate = item.dueDate || item.datetime || item.remindAt || item.timestamp || (item.date && item.time ? `${item.date}T${item.time}` : null);
+      if (!rawDate) continue;
 
-      let remindAt = null;
-      if (item.date && item.time) {
-        remindAt = new Date(`${item.date}T${item.time}`);
-      } else if (item.dueDate) {
-        remindAt = new Date(item.dueDate);
-      }
+      const remindAt = new Date(rawDate);
+      const id = item.id || (String(item.title || item.text) + rawDate);
+      if (syncedIds.has(id) || isNaN(remindAt.getTime()) || remindAt.getTime() <= now) continue;
 
-      if (remindAt && !isNaN(remindAt.getTime()) && remindAt.getTime() > now) {
-        syncedIds.add(id);
-        origSetItem('synced_push_ids', JSON.stringify([...syncedIds]));
-
-        fetch(`${SUPABASE_URL}/rest/v1/push_reminders`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'apikey': SUPABASE_ANON_KEY,
-            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-          },
-          body: JSON.stringify({
-            title: item.title || item.text || 'תזכורת',
-            body: item.notes || 'הגיע זמן התזכורת שלך!',
-            remind_at: remindAt.toISOString(),
-            subscription: sub.toJSON()
-          })
-        }).catch(console.error);
-      }
+      syncedIds.add(id);
+      origSetItem('synced_push_ids', JSON.stringify([...syncedIds]));
+      sendToSupabase(item.title || item.text || 'תזכורת', item.notes || item.body || 'הגיע זמן התזכורת שלך!', remindAt.toISOString(), sub);
     }
   }
-</script>        
+</script>
+       
 </body></html>
