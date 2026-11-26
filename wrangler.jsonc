@@ -1,0 +1,12 @@
+{
+  // שרת האפליקציה: מגיש את הקבצים מתיקיית השורש ושולח התראות (Web Push) בזמן.
+  // אין סודות להגדיר: מפתחות ההתראות נוצרים לבד בפעם הראשונה ונשמרים ב-Durable Object.
+  "name": "rappels",
+  "main": "worker/index.js",
+  "compatibility_date": "2025-09-01",
+  "assets": { "directory": ".", "binding": "ASSETS", "run_worker_first": ["/api/*", "/sw.js", "/", "/index.html"] },
+  "durable_objects": { "bindings": [{ "name": "HUB", "class_name": "Hub" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Hub"] }],
+  "triggers": { "crons": ["* * * * *"] },
+  "observability": { "enabled": true }
+}

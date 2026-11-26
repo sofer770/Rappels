@@ -1,0 +1,14 @@
+{
+  "name": "rappels",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node test/schedule.test.mjs && node test/push.test.mjs",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "http_ece": "1.2.1",
+    "wrangler": "4.168.0"
+  }
+}
