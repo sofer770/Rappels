@@ -1,20 +1,26 @@
 {
-  "name": "תזכורות - לוח שנה עברי",
+  "name": "תזכורות",
   "short_name": "תזכורות",
-  "start_url": "/",
+  "description": "תזכורות בעברית: חוזרות, ימי הולדת, נודניק ולוח שנה עברי, עם התראות גם כשהאפליקציה סגורה.",
+  "id": "/",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
-  "background_color": "#ffffff",
+  "display_override": ["window-controls-overlay", "standalone"],
+  "dir": "rtl",
+  "lang": "he",
+  "orientation": "portrait",
+  "background_color": "#f4f5fb",
   "theme_color": "#4f46e5",
+  "categories": ["productivity", "utilities", "lifestyle"],
   "icons": [
-    {
-      "src": "logo.png",
-      "sizes": "192x192",
-      "type": "image/png"
-    },
-    {
-      "src": "logo.png",
-      "sizes": "512x512",
-      "type": "image/png"
-    }
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "logo.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "תזכורת חדשה", "short_name": "חדשה", "url": "./?new=task", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] },
+    { "name": "יום הולדת חדש", "short_name": "יום הולדת", "url": "./?new=birthday", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] },
+    { "name": "לוח שנה", "short_name": "לוח", "url": "./?tab=cal", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] }
   ]
 }
