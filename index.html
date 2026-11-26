@@ -4793,5 +4793,92 @@ url:e,reason:"blocked_domain_not_allowlisted"},b.parentOrigin);throw new DOMExce
   }
   new MutationObserver(updateSettingsArea).observe(document.body, { childList: true, subtree: true });
   updateSettingsArea();
-</script>    
+</script> 
+<script>
+  const SUPABASE_URL = 'https://exkskcrywyzqsnlvbgls.supabase.co';
+  const SUPABASE_ANON_KEY = 'BOp_tzSr9SuBVRX86P5M8NNjhRSDFfbpgnC_ylBRxObVQEGRlQ7cQv11_PvQm6662mIHztzeiEunw3yR0JPXdqc';
+  const VAPID_PUBLIC_KEY = 'qzoxbFgoRl0PHNFqmkOh5YP97mvhWDJILZd8Rln2LB8';
+
+  function urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const rawData = atob(base64);
+    return Uint8Array.from([...rawData].map(c => c.charCodeAt(0)));
+  }
+
+  async function ensurePushSubscription() {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return null;
+    if (Notification.permission !== 'granted') return null;
+
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+      });
+    }
+    return sub;
+  }
+
+  // רישום אוטומטי ברגע שהמשתמש מאשר התראות
+  document.addEventListener('click', (e) => {
+    if (e.target && e.target.textContent && e.target.textContent.includes('אפשר התראות')) {
+      setTimeout(ensurePushSubscription, 1500);
+    }
+  });
+  window.addEventListener('load', () => setTimeout(ensurePushSubscription, 2000));
+
+  // סנכרון אוטומטי של תזכורות חדשות ל-Supabase
+  const syncedIds = new Set(JSON.parse(localStorage.getItem('synced_push_ids') || '[]'));
+  const origSetItem = localStorage.setItem.bind(localStorage);
+
+  localStorage.setItem = function(key, value) {
+    origSetItem(key, value);
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) {
+        syncRemindersToServer(parsed);
+      }
+    } catch (e) {}
+  };
+
+  async function syncRemindersToServer(items) {
+    const sub = await ensurePushSubscription();
+    if (!sub) return;
+
+    const now = Date.now();
+    for (const item of items) {
+      const id = item.id || (item.title + item.date + item.time);
+      if (!id || syncedIds.has(id) || item.completed) continue;
+
+      let remindAt = null;
+      if (item.date && item.time) {
+        remindAt = new Date(`${item.date}T${item.time}`);
+      } else if (item.dueDate) {
+        remindAt = new Date(item.dueDate);
+      }
+
+      if (remindAt && !isNaN(remindAt.getTime()) && remindAt.getTime() > now) {
+        syncedIds.add(id);
+        origSetItem('synced_push_ids', JSON.stringify([...syncedIds]));
+
+        fetch(`${SUPABASE_URL}/rest/v1/push_reminders`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+          },
+          body: JSON.stringify({
+            title: item.title || item.text || 'תזכורת',
+            body: item.notes || 'הגיע זמן התזכורת שלך!',
+            remind_at: remindAt.toISOString(),
+            subscription: sub.toJSON()
+          })
+        }).catch(console.error);
+      }
+    }
+  }
+</script>        
 </body></html>
