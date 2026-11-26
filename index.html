@@ -4799,6 +4799,14 @@ url:e,reason:"blocked_domain_not_allowlisted"},b.parentOrigin);throw new DOMExce
   const SUPABASE_ANON_KEY = 'sb_publishable_rqThvglntbm0keQBIHqgyA_pyaiFqbx';
   const VAPID_PUBLIC_KEY = 'BOp_tzSr9SuBVRX86P5M8NNjhRSDFfbpgnC_ylBRxObVQEGRlQ7cQv11_PvQm6662mIHztzeiEunw3yR0JPXdqc';
 
+  function showPushStatus(msg, isError = false) {
+    const el = document.createElement('div');
+    el.textContent = msg;
+    el.style.cssText = `position:fixed;bottom:76px;left:50%;transform:translateX(-50%);z-index:99999;padding:8px 14px;border-radius:12px;font-size:12px;font-weight:bold;color:#fff;background:${isError ? '#e11d48' : '#059669'};box-shadow:0 4px 12px rgba(0,0,0,0.25);pointer-events:none;white-space:nowrap;`;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 3500);
+  }
+
   function urlBase64ToUint8Array(base64String) {
     const padding = '='.repeat((4 - base64String.length % 4) % 4);
     const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
@@ -4808,11 +4816,11 @@ url:e,reason:"blocked_domain_not_allowlisted"},b.parentOrigin);throw new DOMExce
 
   async function ensurePushSubscription() {
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-      return { error: 'הדפדפן לא תומך בהתראות Push' };
+      return { error: 'הדפדפן לא תומך בהתראות Push (באייפון יש להתקין למסך הבית)' };
     }
     if (Notification.permission !== 'granted') {
       const perm = await Notification.requestPermission();
-      if (perm !== 'granted') return { error: 'לא ניתן אישור להתראות בטלפון' };
+      if (perm !== 'granted') return { error: 'אין אישור להתראות בטלפון' };
     }
     try {
       const reg = await navigator.serviceWorker.ready;
@@ -4825,73 +4833,92 @@ url:e,reason:"blocked_domain_not_allowlisted"},b.parentOrigin);throw new DOMExce
       }
       return { sub };
     } catch (e) {
-      return { error: 'שגיאה ברישום להתראות: ' + e.message };
+      return { error: 'שגיאת רישום: ' + e.message };
     }
   }
 
   async function sendToSupabase(title, body, remindAtISO, sub) {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/push_reminders`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'apikey': SUPABASE_ANON_KEY.trim(),
-        'Authorization': `Bearer ${SUPABASE_ANON_KEY.trim()}`
-      },
-      body: JSON.stringify({ title, body, remind_at: remindAtISO, subscription: sub.toJSON() })
-    });
-    if (!res.ok) {
-      const txt = await res.text();
-      return { error: `שגיאת שרת (${res.status}): ${txt}` };
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/push_reminders`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': SUPABASE_ANON_KEY.trim(),
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY.trim()}`
+        },
+        body: JSON.stringify({ title, body, remind_at: remindAtISO, subscription: sub.toJSON() })
+      });
+      if (!res.ok) {
+        const txt = await res.text();
+        return { error: `שגיאת שרת (${res.status}): ${txt}` };
+      }
+      return { ok: true };
+    } catch (e) {
+      return { error: 'שגיאת רשת: ' + e.message };
     }
-    return { ok: true };
   }
 
-  // סנכרון אוטומטי של תזכורות חדשות (כולל dueAt ונודניק)
+  // סנכרון אוטומטי של תזכורות חדשות (כולל dueAt, עריכה ונודניק)
   const syncedIds = new Set(JSON.parse(localStorage.getItem('synced_push_ids') || '[]'));
   const origProtoSetItem = Storage.prototype.setItem;
+  let isSyncing = false;
 
-  async function syncRemindersToServer(items) {
-    if (Notification.permission !== 'granted') return;
-    const { sub } = await ensurePushSubscription();
-    if (!sub) return;
+  async function syncRemindersToServer(items, showErrors = false) {
+    if (isSyncing) return;
+    if (!showErrors && Notification.permission !== 'granted') return;
+    isSyncing = true;
+    try {
+      const { sub, error } = await ensurePushSubscription();
+      if (!sub) {
+        if (showErrors && error) showPushStatus('⚠️ ' + error, true);
+        return;
+      }
 
-    const now = Date.now();
-    for (const item of items) {
-      if (!item || item.completed || item.done || item.isCompleted) continue;
-      const rawDate = item.dueAt || item.dueDate || item.datetime || item.remindAt;
-      if (!rawDate) continue;
+      const now = Date.now();
+      for (const item of items) {
+        if (!item || item.completed || item.done || item.isCompleted) continue;
+        const rawDate = item.dueAt || item.dueDate || item.datetime || item.remindAt;
+        if (!rawDate) continue;
 
-      const remindAt = new Date(rawDate);
-      if (isNaN(remindAt.getTime()) || remindAt.getTime() <= now) continue;
+        const remindAt = new Date(rawDate);
+        if (isNaN(remindAt.getTime()) || remindAt.getTime() <= now) continue;
 
-      const title = item.title || item.text || 'תזכורת';
-      const body = item.notes || item.body || 'הגיע זמן התזכורת שלך!';
-      const syncKey = `${item.id || title}_${remindAt.getTime()}`;
-      if (syncedIds.has(syncKey)) continue;
+        const title = item.title || item.text || 'תזכורת';
+        const body = item.notes || item.body || 'הגיע זמן התזכורת שלך!';
+        const syncKey = `${item.id || title}_${remindAt.getTime()}`;
+        if (syncedIds.has(syncKey)) continue;
 
-      syncedIds.add(syncKey);
-      origProtoSetItem.call(localStorage, 'synced_push_ids', JSON.stringify([...syncedIds]));
-      await sendToSupabase(title, body, remindAt.toISOString(), sub);
+        const res = await sendToSupabase(title, body, remindAt.toISOString(), sub);
+        if (res.ok) {
+          syncedIds.add(syncKey);
+          origProtoSetItem.call(localStorage, 'synced_push_ids', JSON.stringify([...syncedIds]));
+          showPushStatus('🔔 התזכורת נשמרה בשרת');
+        } else if (showErrors) {
+          showPushStatus('❌ ' + res.error, true);
+        }
+      }
+    } finally {
+      isSyncing = false;
     }
   }
 
-  function scanReminders() {
+  function scanReminders(showErrors = false) {
     try {
       const raw = localStorage.getItem('tizkorot_reminders_v1');
       if (!raw) return;
       const list = JSON.parse(raw);
-      if (Array.isArray(list) && list.length > 0) syncRemindersToServer(list);
+      if (Array.isArray(list) && list.length > 0) syncRemindersToServer(list, showErrors);
     } catch (e) {}
   }
 
   Storage.prototype.setItem = function(key, value) {
     origProtoSetItem.call(this, key, value);
     if (this === localStorage && key === 'tizkorot_reminders_v1') {
-      setTimeout(scanReminders, 200);
+      scanReminders(true);
     }
   };
 
-  window.addEventListener('load', () => setTimeout(scanReminders, 1000));
-  setInterval(scanReminders, 5000);
+  window.addEventListener('load', () => setTimeout(() => scanReminders(false), 1000));
+  setInterval(() => scanReminders(false), 5000);
 </script>
 </body></html>
