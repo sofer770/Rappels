@@ -4751,4 +4751,21 @@ url:e,reason:"blocked_domain_not_allowlisted"},b.parentOrigin);throw new DOMExce
     installBtn.style.display = 'none';
   });
 </script>
+<script>
+  function hideDevButtons() {
+    document.querySelectorAll('button').forEach(btn => {
+      if (btn.textContent.includes('index.html') || btn.textContent.includes('logo.png')) {
+        btn.style.display = 'none';
+      }
+    });
+    document.querySelectorAll('h1, h2, h3, h4, p, div').forEach(el => {
+      if (el.children.length === 0) {
+        if (el.textContent.includes('הורדה ל-GitHub')) el.textContent = 'גיבוי וניהול נתונים';
+        if (el.textContent.includes('הורד את קובץ האפליקציה')) el.textContent = 'גבה את התזכורות שלך לקובץ או שחזר מגיבוי קודם.';
+      }
+    });
+  }
+  new MutationObserver(hideDevButtons).observe(document.body, { childList: true, subtree: true });
+  hideDevButtons();
+</script>        
 </body></html>
