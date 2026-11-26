@@ -4798,7 +4798,8 @@ url:e,reason:"blocked_domain_not_allowlisted"},b.parentOrigin);throw new DOMExce
   const SUPABASE_URL = 'https://exkskcrywyzqsnlvbgls.supabase.co';
   const SUPABASE_ANON_KEY = 'sb_publishable_rqThvglntbm0keQBIHqgyA_pyaiFqbx';
   const VAPID_PUBLIC_KEY = 'BOp_tzSr9SuBVRX86P5M8NNjhRSDFfbpgnC_ylBRxObVQEGRlQ7cQv11_PvQm6662mIHztzeiEunw3yR0JPXdqc';
-function urlBase64ToUint8Array(base64String) {
+
+  function urlBase64ToUint8Array(base64String) {
     const padding = '='.repeat((4 - base64String.length % 4) % 4);
     const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
     const rawData = atob(base64);
@@ -4847,17 +4848,17 @@ function urlBase64ToUint8Array(base64String) {
 
   // סנכרון אוטומטי של תזכורות חדשות
   const syncedIds = new Set(JSON.parse(localStorage.getItem('synced_push_ids') || '[]'));
-  const origSetItem = localStorage.setItem.bind(localStorage);
+  const origProtoSetItem = Storage.prototype.setItem;
 
-  localStorage.setItem = function(key, value) {
-    origSetItem(key, value);
-    if (key === 'synced_push_ids') return;
-    try {
-      const parsed = JSON.parse(value);
-      const list = Array.isArray(parsed) ? parsed : (parsed?.reminders || parsed?.items || null);
-      if (Array.isArray(list)) syncRemindersToServer(list);
-    } catch (e) {}
-  };
+  function extractDate(item) {
+    if (!item || typeof item !== 'object') return null;
+    if (item.date && item.time) return new Date(`${item.date}T${item.time}`);
+    if (item.dueDate && item.dueTime) return new Date(`${item.dueDate}T${item.dueTime}`);
+    const raw = item.dueDate || item.datetime || item.remindAt || item.scheduledAt || item.timestamp || item.due || item.time || item.date;
+    if (!raw) return null;
+    const d = new Date(raw);
+    return isNaN(d.getTime()) ? null : d;
+  }
 
   async function syncRemindersToServer(items) {
     if (Notification.permission !== 'granted') return;
@@ -4866,19 +4867,41 @@ function urlBase64ToUint8Array(base64String) {
 
     const now = Date.now();
     for (const item of items) {
-      if (!item || item.completed || item.done) continue;
-      const rawDate = item.dueDate || item.datetime || item.remindAt || item.timestamp || (item.date && item.time ? `${item.date}T${item.time}` : null);
-      if (!rawDate) continue;
+      if (!item || item.completed || item.done || item.isCompleted) continue;
+      const remindAt = extractDate(item);
+      if (!remindAt || remindAt.getTime() <= now) continue;
 
-      const remindAt = new Date(rawDate);
-      const id = item.id || (String(item.title || item.text) + rawDate);
-      if (syncedIds.has(id) || isNaN(remindAt.getTime()) || remindAt.getTime() <= now) continue;
+      const title = item.title || item.text || item.name || 'תזכורת';
+      const body = item.notes || item.description || item.body || 'הגיע זמן התזכורת שלך!';
+      const id = String(item.id || (title + '_' + remindAt.getTime()));
+      if (syncedIds.has(id)) continue;
 
       syncedIds.add(id);
-      origSetItem('synced_push_ids', JSON.stringify([...syncedIds]));
-      sendToSupabase(item.title || item.text || 'תזכורת', item.notes || item.body || 'הגיע זמן התזכורת שלך!', remindAt.toISOString(), sub);
+      origProtoSetItem.call(localStorage, 'synced_push_ids', JSON.stringify([...syncedIds]));
+      await sendToSupabase(title, body, remindAt.toISOString(), sub);
     }
   }
+
+  function scanAllLocalStorage() {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key || key === 'synced_push_ids') continue;
+      try {
+        const parsed = JSON.parse(localStorage.getItem(key));
+        const list = Array.isArray(parsed) ? parsed : (parsed?.reminders || parsed?.items || parsed?.tasks || null);
+        if (Array.isArray(list) && list.length > 0) syncRemindersToServer(list);
+      } catch (e) {}
+    }
+  }
+
+  Storage.prototype.setItem = function(key, value) {
+    origProtoSetItem.call(this, key, value);
+    if (this === localStorage && key !== 'synced_push_ids') {
+      setTimeout(scanAllLocalStorage, 200);
+    }
+  };
+
+  window.addEventListener('load', () => setTimeout(scanAllLocalStorage, 1000));
+  setInterval(scanAllLocalStorage, 5000);
 </script>
-       
 </body></html>
