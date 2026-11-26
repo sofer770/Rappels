@@ -4808,7 +4808,7 @@ url:e,reason:"blocked_domain_not_allowlisted"},b.parentOrigin);throw new DOMExce
 
   async function ensurePushSubscription() {
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-      return { error: 'הדפדפן לא תומך בהתראות Push (באייפון חייבים להתקין קודם למסך הבית)' };
+      return { error: 'הדפדפן לא תומך בהתראות Push' };
     }
     if (Notification.permission !== 'granted') {
       const perm = await Notification.requestPermission();
@@ -4846,19 +4846,9 @@ url:e,reason:"blocked_domain_not_allowlisted"},b.parentOrigin);throw new DOMExce
     return { ok: true };
   }
 
-  // סנכרון אוטומטי של תזכורות חדשות
+  // סנכרון אוטומטי של תזכורות חדשות (כולל dueAt ונודניק)
   const syncedIds = new Set(JSON.parse(localStorage.getItem('synced_push_ids') || '[]'));
   const origProtoSetItem = Storage.prototype.setItem;
-
-  function extractDate(item) {
-    if (!item || typeof item !== 'object') return null;
-    if (item.date && item.time) return new Date(`${item.date}T${item.time}`);
-    if (item.dueDate && item.dueTime) return new Date(`${item.dueDate}T${item.dueTime}`);
-    const raw = item.dueDate || item.datetime || item.remindAt || item.scheduledAt || item.timestamp || item.due || item.time || item.date;
-    if (!raw) return null;
-    const d = new Date(raw);
-    return isNaN(d.getTime()) ? null : d;
-  }
 
   async function syncRemindersToServer(items) {
     if (Notification.permission !== 'granted') return;
@@ -4868,40 +4858,40 @@ url:e,reason:"blocked_domain_not_allowlisted"},b.parentOrigin);throw new DOMExce
     const now = Date.now();
     for (const item of items) {
       if (!item || item.completed || item.done || item.isCompleted) continue;
-      const remindAt = extractDate(item);
-      if (!remindAt || remindAt.getTime() <= now) continue;
+      const rawDate = item.dueAt || item.dueDate || item.datetime || item.remindAt;
+      if (!rawDate) continue;
 
-      const title = item.title || item.text || item.name || 'תזכורת';
-      const body = item.notes || item.description || item.body || 'הגיע זמן התזכורת שלך!';
-      const id = String(item.id || (title + '_' + remindAt.getTime()));
-      if (syncedIds.has(id)) continue;
+      const remindAt = new Date(rawDate);
+      if (isNaN(remindAt.getTime()) || remindAt.getTime() <= now) continue;
 
-      syncedIds.add(id);
+      const title = item.title || item.text || 'תזכורת';
+      const body = item.notes || item.body || 'הגיע זמן התזכורת שלך!';
+      const syncKey = `${item.id || title}_${remindAt.getTime()}`;
+      if (syncedIds.has(syncKey)) continue;
+
+      syncedIds.add(syncKey);
       origProtoSetItem.call(localStorage, 'synced_push_ids', JSON.stringify([...syncedIds]));
       await sendToSupabase(title, body, remindAt.toISOString(), sub);
     }
   }
 
-  function scanAllLocalStorage() {
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (!key || key === 'synced_push_ids') continue;
-      try {
-        const parsed = JSON.parse(localStorage.getItem(key));
-        const list = Array.isArray(parsed) ? parsed : (parsed?.reminders || parsed?.items || parsed?.tasks || null);
-        if (Array.isArray(list) && list.length > 0) syncRemindersToServer(list);
-      } catch (e) {}
-    }
+  function scanReminders() {
+    try {
+      const raw = localStorage.getItem('tizkorot_reminders_v1');
+      if (!raw) return;
+      const list = JSON.parse(raw);
+      if (Array.isArray(list) && list.length > 0) syncRemindersToServer(list);
+    } catch (e) {}
   }
 
   Storage.prototype.setItem = function(key, value) {
     origProtoSetItem.call(this, key, value);
-    if (this === localStorage && key !== 'synced_push_ids') {
-      setTimeout(scanAllLocalStorage, 200);
+    if (this === localStorage && key === 'tizkorot_reminders_v1') {
+      setTimeout(scanReminders, 200);
     }
   };
 
-  window.addEventListener('load', () => setTimeout(scanAllLocalStorage, 1000));
-  setInterval(scanAllLocalStorage, 5000);
+  window.addEventListener('load', () => setTimeout(scanReminders, 1000));
+  setInterval(scanReminders, 5000);
 </script>
 </body></html>
