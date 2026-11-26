@@ -4752,20 +4752,46 @@ url:e,reason:"blocked_domain_not_allowlisted"},b.parentOrigin);throw new DOMExce
   });
 </script>
 <script>
-  function hideDevButtons() {
+  function updateSettingsArea() {
     document.querySelectorAll('button').forEach(btn => {
       if (btn.textContent.includes('index.html') || btn.textContent.includes('logo.png')) {
         btn.style.display = 'none';
       }
+      if (btn.textContent.includes('ייצוא גיבוי')) {
+        btn.textContent = '💾 שמירת גיבוי';
+      }
+      if (btn.textContent.includes('ייבוא מגיבוי')) {
+        btn.textContent = '📂 שחזור מגיבוי';
+      }
     });
+
     document.querySelectorAll('h1, h2, h3, h4, p, div').forEach(el => {
       if (el.children.length === 0) {
         if (el.textContent.includes('הורדה ל-GitHub')) el.textContent = 'גיבוי וניהול נתונים';
         if (el.textContent.includes('הורד את קובץ האפליקציה')) el.textContent = 'גבה את התזכורות שלך לקובץ או שחזר מגיבוי קודם.';
       }
     });
+
+    const cleanBtn = Array.from(document.querySelectorAll('button')).find(b => b.textContent.includes('נקה תזכורות שהושלמו'));
+    if (cleanBtn && !document.getElementById('backupInfoBox')) {
+      const card = cleanBtn.closest('div[class*="rounded"]') || cleanBtn.parentElement.parentElement;
+      if (card) {
+        const info = document.createElement('div');
+        info.id = 'backupInfoBox';
+        info.style.cssText = 'margin-top:16px; padding:14px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; color:#000000; font-size:14px; line-height:1.7; text-align:right;';
+        info.innerHTML = `
+          <div style="font-weight:bold; margin-bottom:6px; color:#000000;">למה כדאי להשתמש בגיבוי?</div>
+          <ul style="margin:0; padding-right:18px; color:#000000;">
+            <li><strong>מעבר לטלפון או מחשב חדש:</strong> ניתן לייצא את כל התזכורות לקובץ אחד, לשלוח אותו לעצמך ולייבא אותו במכשיר החדש.</li>
+            <li><strong>הגנה ממחיקה:</strong> אם מנקים נתוני גלישה בדפדפן או מאפסים את הטלפון, התזכורות המקומיות נמחקות. קובץ הגיבוי מאפשר לשחזר הכל בלחיצה.</li>
+            <li><strong>סנכרון ידני בין מכשירים:</strong> למשל העתקת רשימת התזכורות מהמחשב לטלפון.</li>
+          </ul>
+        `;
+        card.appendChild(info);
+      }
+    }
   }
-  new MutationObserver(hideDevButtons).observe(document.body, { childList: true, subtree: true });
-  hideDevButtons();
-</script>        
+  new MutationObserver(updateSettingsArea).observe(document.body, { childList: true, subtree: true });
+  updateSettingsArea();
+</script>    
 </body></html>
