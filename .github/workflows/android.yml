@@ -29,6 +29,7 @@ jobs:
           java-version: 21
           cache: gradle
       - run: npm ci
+      - run: node scripts/patch-alarms.cjs
       - run: npm test
       - name: Prepare web files
         run: node scripts/build-www.mjs && npx cap sync android
