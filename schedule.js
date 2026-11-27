@@ -164,8 +164,10 @@
   }
 
   // מועד שעבר ועדיין לא סומן "בוצע"
+  // תזכורת לפי מיקום: אין לה שעה, היא קופצת כשמגיעים למקום או יוצאים ממנו
+  function isLoc(r) { return !!(r && r.loc && typeof r.loc.lat === 'number'); }
   function pendingOcc(r, now) {
-    if (r.done || r.paused) return null;
+    if (r.done || r.paused || isLoc(r)) return null;
     var acked = r.ackedUntil || 0;
     if (!isRecurring(r)) {
       var b = parseLocal(r.start).getTime();
@@ -178,7 +180,8 @@
   // מצב לתצוגה: מתי התזכורת הבאה ומה מצבה
   function status(r, now) {
     if (r.done) return { state: 'done', at: r.doneAt || 0 };
-    if (r.paused) return { state: 'paused', at: nextAfter(r, now) };
+    if (r.paused) return { state: 'paused', at: isLoc(r) ? null : nextAfter(r, now) };
+    if (isLoc(r)) return { state: 'location', at: null };
     if (r.snoozeUntil && r.snoozeUntil > now) return { state: 'snoozed', at: r.snoozeUntil };
     var p = pendingOcc(r, now);
     if (r.snoozeUntil) return { state: 'overdue', at: Math.max(r.snoozeUntil, p || 0) };
@@ -213,7 +216,7 @@
     opts = opts || {};
     var jobs = [];
     (list || []).forEach(function (r) {
-      if (!r || r.done || r.paused || r.deleted) return;
+      if (!r || r.done || r.paused || r.deleted || isLoc(r)) return;
       var nag = Math.max(0, parseInt(r.nag, 10) || 0) * MIN;
       var lead = Math.max(0, parseInt(r.lead, 10) || 0) * MIN;
       var body = (r.notes || '').slice(0, 300);
@@ -289,6 +292,6 @@
     parseLocal: parseLocal, fmtLocal: fmtLocal, dayKey: dayKey, pad: pad,
     occurrences: occurrences, nextAfter: nextAfter, pendingOcc: pendingOcc, status: status,
     buildJobs: buildJobs, markDone: markDone, snooze: snooze, inRange: inRange,
-    isRecurring: isRecurring, titleFor: titleFor, hebParts: hebParts, leadText: leadText
+    isRecurring: isRecurring, isLoc: isLoc, titleFor: titleFor, hebParts: hebParts, leadText: leadText
   };
 })(typeof self !== 'undefined' ? self : globalThis);
