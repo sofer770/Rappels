@@ -35,6 +35,8 @@
   ul.feat li::before { content: '✓'; color: var(--accent-2); font-weight: 800; margin-inline-end: 8px; }
   .alt { text-align: center; font-size: 14px; color: var(--muted); margin-top: 22px; }
   .alt a { color: var(--accent); }
+  a.tel { white-space: nowrap; direction: ltr; unicode-bidi: isolate; display: inline-block; color: var(--accent); }
+  .credit { text-align: center; margin-top: 26px; padding-top: 18px; border-top: 1px solid var(--line); font-size: 15px; line-height: 1.7; }
 </style>
 </head>
 <body>
@@ -52,7 +54,7 @@
     <ol>
       <li>לוחצים על <b>הורדה לאנדרואיד</b> ופותחים את הקובץ שירד.</li>
       <li>אם מופיע "התקנה ממקורות לא ידועים", מאשרים וחוזרים אחורה.</li>
-      <li>לוחצים <b>התקנה</b>. אם מופיעה אזהרה של Play Protect: "פרטים נוספים" ← "התקנה בכל זאת". האזהרה מופיעה כי האפליקציה לא מהחנות. את האפליקציה פיתח <b>יאיר גלעדי</b>, ולשאלות אפשר לפנות אליו: <a href="tel:0542135831">054-2135831</a>.</li>
+      <li>לוחצים <b>התקנה</b>. אם מופיעה אזהרה של Play Protect: "פרטים נוספים" ← "התקנה בכל זאת". האזהרה מופיעה כי האפליקציה לא מהחנות. את האפליקציה פיתח <b>יאיר גלעדי</b>, ולשאלות אפשר לפנות אליו: <a class="tel" href="tel:0542135831">054-2135831</a>.</li>
       <li>פותחים את <b>תזכורות</b> ומאשרים התראות ושעונים מעוררים.</li>
     </ol>
   </div>
@@ -69,8 +71,12 @@
     </ul>
   </div>
 
-  <p class="alt">פותח על ידי יאיר גלעדי · <a href="tel:0542135831">054-2135831</a></p>
   <p class="alt">באייפון או במחשב? <a href="../">פתחו את גרסת האתר</a></p>
+  <footer class="credit">
+    <div>נוצר ע"י <b>יאיר גלעדי</b></div>
+    <div>"המרכז לבריאות טבעית"</div>
+    <div><a class="tel" href="tel:0542135831">054-2135831</a> - <a class="tel" href="https://el-habriut.co.il">https://el-habriut.co.il</a></div>
+  </footer>
 </main>
 </body>
 </html>
