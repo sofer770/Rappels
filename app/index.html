@@ -37,7 +37,16 @@
   .alt a { color: var(--accent); }
   a.tel { white-space: nowrap; direction: ltr; unicode-bidi: isolate; display: inline-block; color: var(--accent); }
   .credit { text-align: center; margin-top: 26px; padding-top: 18px; border-top: 1px solid var(--line); font-size: 15px; line-height: 1.7; }
+  html:not(.ios) .only-ios, html.ios .only-android { display: none; }
 </style>
+<script>
+  // באייפון מציגים הוראות התקנה לאייפון במקום קובץ האנדרואיד
+  if (/iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) document.documentElement.classList.add('ios');
+  document.addEventListener('click', function (e) {
+    if (e.target.id === 'show-ios') { e.preventDefault(); document.documentElement.classList.add('ios'); scrollTo(0, 0); }
+    if (e.target.id === 'show-android') { e.preventDefault(); document.documentElement.classList.remove('ios'); scrollTo(0, 0); }
+  });
+</script>
 </head>
 <body>
 <main>
@@ -45,11 +54,28 @@
     <img src="../logo.png" alt="">
     <h1>תזכורות</h1>
     <p class="sub">תזכורות שקופצות בזמן, גם בלי אינטרנט. בלי פרסומות.</p>
-    <a class="dl" href="https://github.com/sofer770/Rappels/releases/download/android/tizkorot.apk">⬇ הורדה לאנדרואיד</a>
-    <p class="note">קובץ התקנה (APK) · כ-8 MB</p>
+    <div class="only-android">
+      <a class="dl" href="https://github.com/sofer770/Rappels/releases/download/android/tizkorot.apk">⬇ הורדה לאנדרואיד</a>
+      <p class="note">קובץ התקנה (APK) · כ-8 MB</p>
+    </div>
+    <div class="only-ios">
+      <a class="dl" href="../">🍎 פתיחה באייפון</a>
+      <p class="note">באייפון מתקינים ישר מ-Safari, בלי חנות</p>
+    </div>
   </div>
 
-  <div class="card">
+  <div class="card only-ios">
+    <h2>התקנה באייפון</h2>
+    <ol>
+      <li>פותחים את הדף הזה ב-<b>Safari</b> (לא בדפדפן אחר) ולוחצים <b>פתיחה באייפון</b>.</li>
+      <li>לוחצים על כפתור <b>השיתוף</b> (ריבוע עם חץ למעלה) ← <b>הוספה למסך הבית</b> ← <b>הוספה</b>.</li>
+      <li>פותחים את <b>תזכורות</b> מהאייקון החדש במסך הבית.</li>
+      <li>בהגדרות האפליקציה לוחצים <b>הפעלת התראות</b> ומאשרים.</li>
+    </ol>
+    <p class="note" style="text-align:start">צריך iOS 16.4 ומעלה. התזכורות מגיעות כהתראה רגילה של האייפון, גם כשהאפליקציה סגורה (נדרש אינטרנט).</p>
+  </div>
+
+  <div class="card only-android">
     <h2>איך מתקינים</h2>
     <ol>
       <li>לוחצים על <b>הורדה לאנדרואיד</b> ופותחים את הקובץ שירד.</li>
@@ -71,7 +97,8 @@
     </ul>
   </div>
 
-  <p class="alt">באייפון או במחשב? <a href="../">פתחו את גרסת האתר</a></p>
+  <p class="alt only-android">באייפון? <a href="#" id="show-ios">הוראות לאייפון</a> · במחשב? <a href="../">פתחו את גרסת האתר</a></p>
+  <p class="alt only-ios">באנדרואיד? <a href="#" id="show-android">הורדת האפליקציה לאנדרואיד</a></p>
   <footer class="credit">
     <div>נוצר ע"י <b>יאיר גלעדי</b></div>
     <div>"המרכז לבריאות טבעית"</div>
