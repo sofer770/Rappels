@@ -81,6 +81,10 @@
           dev.lastSync = Date.now(); dev.lastJobs = j.jobs; dev.serverPush = !!j.push;
           if (body.sub) dev.subSent = true;
           if (!j.push) dev.subSent = false;
+          dev.syncError = null;
+          await Store.setMeta('device', dev);
+        } else {
+          dev.syncError = r.status + ' ' + (j.error || '');
           await Store.setMeta('device', dev);
         }
         return j;
