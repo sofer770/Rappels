@@ -735,17 +735,38 @@
       var k = await withTimeout(fetch(DB.api('key')).then(function (r) { if (!r.ok) throw new Error('key'); return r.json(); }), 15000, 'key');
       var sub = await reg.pushManager.getSubscription();
       if (sub && dev.key && dev.key !== k.key) { await sub.unsubscribe(); sub = null; }
-      if (!sub) sub = await withTimeout(reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(k.key) }), 20000, 'subscribe');
-      dev.push = true; dev.key = k.key; dev.subSent = false; dev.serverPush = true; await DB.setMeta('device', dev);
+      if (!sub) {
+        // שירות ההתראות של Google נכשל לפעמים בניסיון הראשון (״push service error״). מנסים שוב כמה פעמים.
+        for (var tries = 0; !sub && tries < 4; tries++) {
+          try { sub = await withTimeout(reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(k.key) }), 20000, 'subscribe'); }
+          catch (err) {
+            if (tries === 3) throw err;
+            try { var old = await reg.pushManager.getSubscription(); if (old) await old.unsubscribe(); } catch (x) {}
+            await new Promise(function (r) { setTimeout(r, 1500 * (tries + 1)); });
+          }
+        }
+      }
+      dev.push = true; dev.key = k.key; dev.subSent = false; dev.serverPush = true; dev.lastError = null; await DB.setMeta('device', dev);
       var res = await DB.sync({ sub: true });
       if (res && res.ok) { pushActive = true; if (!silent) toast('ההתראות הופעלו ✓ הן יקפצו גם כשהאפליקציה סגורה'); }
       else { if (!silent) toast('ההתראות הופעלו, אבל השרת לא ענה (' + esc(res && (res.error || '') || '') + '). ננסה שוב אוטומטית.'); }
     } catch (e) {
       dev.push = true; dev.serverPush = false; dev.lastError = String(e && e.message || e); await DB.setMeta('device', dev);
-      toast('לא הצלחתי להתחבר לשרת ההתראות (' + dev.lastError + '). ההתראות יפעלו בינתיים כשהאפליקציה פתוחה.');
+      if (/push service/i.test(dev.lastError)) showPushServiceHelp(); else toast('לא הצלחתי להתחבר לשרת ההתראות (' + dev.lastError + '). ההתראות יפעלו בינתיים כשהאפליקציה פתוחה.');
     }
     refreshBanner();
     return true;
+  }
+  function showPushServiceHelp() {
+    var h = '<p>הטלפון לא הצליח להירשם לשירות ההתראות של Google. זה קורה בעיקר בטלפוני Xiaomi / Redmi / POCO בגלל חיסכון בסוללה. כך מתקנים:</p><ol class="steps">' +
+      '<li><b>הגדרות</b> ← <b>אפליקציות</b> ← <b>ניהול אפליקציות</b> ← <b>Chrome</b>.</li>' +
+      '<li><b>חיסכון בסוללה</b> ← <b>ללא הגבלות</b>.</li>' +
+      '<li>להפעיל <b>הפעלה אוטומטית</b> (Autostart).</li>' +
+      '<li><b>התראות</b> ← לוודא שמופעל.</li>' +
+      '<li>לוודא ש<b>שירותי Google Play</b> מעודכנים (בחנות Play).</li>' +
+      '<li>לסגור את האפליקציה, לפתוח שוב, ולהפעיל התראות מחדש.</li></ol>';
+    var s = openSheet('<h2><span class="grow">' + ic('bell') + ' עוד צעד קטן</span><button class="icon-btn" data-x="close">' + ic('x') + '</button></h2><div class="card">' + h + '</div><button class="btn primary block" data-x="retry">ניסיון נוסף עכשיו</button>');
+    s.addEventListener('click', function (e) { if (e.target.closest('[data-x="close"]')) closeSheet(); if (e.target.closest('[data-x="retry"]')) { closeSheet(); enablePush(); } });
   }
   function showBlockedHelp() {
     var h = isIOS() ? '<ol class="steps"><li>פותחים את <b>הגדרות</b> באייפון.</li><li>גוללים ל<b>התראות</b> ובוחרים <b>תזכורות</b>.</li><li>מפעילים <b>אפשר התראות</b>.</li></ol>'
@@ -888,7 +909,8 @@
       var send = function () { return fetch(DB.api('test'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: dev.id, secret: dev.secret, delay: delay }) }).then(function (x) { return x.json(); }); };
       var r = await withTimeout(send(), 15000, 'timeout').catch(function (e) { return { error: e.message }; });
       if (r.error === 'missing' || r.error === 'forbidden') { await DB.sync({ sub: true }); r = await withTimeout(send(), 15000, 'timeout').catch(function (e) { return { error: e.message }; }); }
-      if (r.ok) toast(delay ? 'בעוד 30 שניות תקפוץ התראה. אפשר לסגור את האפליקציה עכשיו.' : 'נשלחה התראת בדיקה');
+      if (r.ok && !delay && r.status && r.status !== 201 && r.status !== 200) toast('שירות ההתראות של הטלפון דחה את ההודעה (קוד ' + r.status + '). שלחו לי צילום של שורת המצב.');
+      else if (r.ok) toast(delay ? 'בעוד 30 שניות תקפוץ התראה. אפשר לסגור את האפליקציה עכשיו.' : 'נשלחה התראת בדיקה (קוד ' + (r.status || '?') + ')');
       else toast('הבדיקה נכשלה (' + (r.error || 'שגיאה') + '). נסו לרענן ולהפעיל את ההתראות מחדש.');
     } catch (e) { toast('הבדיקה נכשלה: ' + (e && e.message || e)); }
   }
@@ -901,6 +923,16 @@
     out.push('מנוי להתראות: ' + (sub ? 'יש' : 'אין'));
     try { var h = await withTimeout(fetch(DB.api('health')).then(function (r) { return r.json(); }), 8000, 't'); out.push('שרת: ' + (h.ok ? 'מחובר' : 'שגיאה')); } catch (e) { out.push('שרת: לא זמין'); }
     var dev = await DB.meta('device'); if (dev && dev.lastError) out.push('שגיאה אחרונה: ' + dev.lastError);
+    if (dev && dev.id) {
+      try {
+        var st = await withTimeout(fetch(DB.api('status'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: dev.id, secret: dev.secret }) }).then(function (r) { return r.json(); }), 8000, 't');
+        if (!st.ok) out.push('בשרת: המכשיר לא רשום');
+        else {
+          out.push('בשרת: ' + (st.hasSub ? 'רשום (' + st.host + ')' : 'בלי מנוי') + ', ' + st.jobs + ' ממתינות');
+          if (st.last) out.push('שליחה אחרונה: ' + whenLabel(st.last.at) + ' · קוד ' + st.last.status + (st.last.text ? ' · ' + st.last.text : ''));
+        }
+      } catch (e) {}
+    }
     out.push('מותקנת: ' + (standalone() ? 'כן' : 'לא') + ' · ' + (isIOS() ? 'iOS' : /android/i.test(navigator.userAgent) ? 'Android' : 'מחשב'));
     return out.join(' · ');
   }

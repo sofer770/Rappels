@@ -133,11 +133,22 @@ export class Hub {
         return json({ ok: true, at: t });
       }
 
+      if (path === 'status') {
+        const a = this.auth(body.id, body.secret, false);
+        if (a !== 'ok') return json({ ok: false, error: a });
+        const d = this.sql.exec('SELECT sub, seen FROM devices WHERE id = ?', body.id).one();
+        const jobs = this.sql.exec('SELECT COUNT(*) AS c, MIN(t) AS t FROM jobs WHERE device = ?', body.id).one();
+        let host = null; try { host = d.sub ? new URL(JSON.parse(d.sub).endpoint).host : null; } catch (e) {}
+        const last = this.kvGet('st:' + body.id);
+        return json({ ok: true, now: Date.now(), hasSub: !!d.sub, host, seen: d.seen, jobs: jobs.c, next: jobs.t, last: last ? JSON.parse(last) : null });
+      }
+
       if (path === 'forget') {
         const a = this.auth(body.id, body.secret, false);
         if (a !== 'ok') return json({ error: a }, 403);
         this.sql.exec('DELETE FROM jobs WHERE device = ?', body.id);
         this.sql.exec('DELETE FROM devices WHERE id = ?', body.id);
+        this.sql.exec('DELETE FROM kv WHERE k = ?', 'st:' + body.id);
         return json({ ok: true });
       }
       return json({ error: 'not_found' }, 404);
@@ -175,11 +186,17 @@ export class Hub {
           this.sql.exec('DELETE FROM jobs WHERE rowid = ?', j.rid);
           if (!j.sub || now - j.t > 12 * 3600000) return;
           try {
-            const st = await sendPush(JSON.parse(j.sub), JSON.parse(j.payload), vapid, subject);
+            const sub = JSON.parse(j.sub);
+            const r = await sendPush(sub, JSON.parse(j.payload), vapid, subject);
+            const st = r.status;
             this.lastStatus = st;
+            this.kvSet('st:' + j.device, JSON.stringify({ at: Date.now(), status: st, text: r.text, host: new URL(sub.endpoint).host }));
             if (st === 404 || st === 410) dead.add(j.device);
             else if (st < 300) sent++;
-          } catch (e) { this.lastStatus = String(e && e.message || e); }
+          } catch (e) {
+            this.lastStatus = String(e && e.message || e);
+            this.kvSet('st:' + j.device, JSON.stringify({ at: Date.now(), status: 0, text: this.lastStatus }));
+          }
         }));
       }
       for (const d of dead) this.sql.exec('UPDATE devices SET sub = NULL WHERE id = ?', d);

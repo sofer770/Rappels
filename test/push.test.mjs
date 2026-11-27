@@ -20,7 +20,7 @@ const vapid = await generateVapid();
 let captured;
 globalThis.fetch = async (url, init) => { captured = { url, init }; return new Response('', { status: 201 }); };
 const st = await sendPush(sub, { title: 't' }, vapid, 'https://example.com');
-assert.equal(st, 201);
+assert.equal(st.status, 201);
 const h = captured.init.headers;
 assert.equal(h['Content-Encoding'], 'aes128gcm');
 const m = h.Authorization.match(/^vapid t=([^.]+)\.([^.]+)\.([^,]+), k=(.+)$/);

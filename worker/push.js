@@ -64,7 +64,7 @@ export async function encryptPayload(sub, payload) {
   return concat(head, asPub, ct);
 }
 
-// שולח התראה. מחזיר את קוד ה-HTTP של שירות ההתראות.
+// שולח התראה. מחזיר את קוד ה-HTTP של שירות ההתראות ואת תחילת התשובה כשיש שגיאה.
 export async function sendPush(sub, payloadObj, vapid, subject, ttl = 86400) {
   const body = await encryptPayload(sub, JSON.stringify(payloadObj));
   const res = await fetch(sub.endpoint, {
@@ -78,5 +78,7 @@ export async function sendPush(sub, payloadObj, vapid, subject, ttl = 86400) {
     },
     body
   });
-  return res.status;
+  let text = '';
+  if (res.status >= 300) { try { text = (await res.text()).slice(0, 200); } catch (e) {} }
+  return { status: res.status, text };
 }
