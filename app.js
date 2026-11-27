@@ -129,6 +129,7 @@
     else if (st.state === 'done') meta.push('<span>' + ic('check') + ' בוצע ' + esc(whenLabel(st.at)) + '</span>');
     else if (st.state === 'paused') meta.push('<span>' + ic('pause') + ' מושהה</span>');
     else if (st.state === 'ended') meta.push('<span>הסתיים</span>');
+    else if (st.state === 'location') meta.push('<span>📍 ' + (r.loc.on === 'exit' ? 'ביציאה מ' : 'בהגעה ל') + esc(r.loc.name || 'מקום') + '</span>');
     else if (st.at) meta.push('<span>' + ic('clock') + ' ' + esc(whenLabel(st.at)) + '</span>');
     if (r.type === 'birthday' && st.at && st.state !== 'done') {
       var age = r.birthYear ? new Date(st.at).getFullYear() - r.birthYear : null;
@@ -206,8 +207,9 @@
     var t = all.filter(function (x) { return x.st.state !== 'overdue' && x.st.at && dayDiff(x.st.at) === 0 && x.st.state !== 'paused'; });
     var u = all.filter(function (x) { return x.st.state !== 'overdue' && x.st.at && dayDiff(x.st.at) > 0 && x.st.state !== 'paused'; });
     var rec = all.filter(function (x) { return S.isRecurring(x.r) && x.st.state !== 'paused'; });
-    var p = all.filter(function (x) { return x.st.state === 'paused' || x.st.state === 'ended' || !x.st.at; });
-    h += section('באיחור', o, 'red') + section('היום', t) + section('בהמשך', u) + section('מושהות והסתיימו', p);
+    var lc = all.filter(function (x) { return x.st.state === 'location'; });
+    var p = all.filter(function (x) { return x.st.state === 'paused' || x.st.state === 'ended' || (!x.st.at && x.st.state !== 'location'); });
+    h += section('באיחור', o, 'red') + section('היום', t) + section('בהמשך', u) + section('📍 לפי מקום', lc) + section('מושהות והסתיימו', p);
     if (!all.length) h += '<div class="empty"><div class="big">📝</div>' + (state.q ? 'לא נמצאו תזכורות' : 'אין תזכורות פעילות') + '</div>';
     else if (rec.length) h += '<div class="small" style="text-align:center;margin-top:10px">' + rec.length + ' תזכורות חוזרות פעילות</div>';
     return h;
@@ -796,6 +798,10 @@
       { id: 'exact', ok: (await NAT.exact()) === 'granted', title: 'לאשר שעונים מעוררים', why: 'כדי שהתזכורת תקפוץ בדקה המדויקת. מדליקים את המתג וחוזרים.' },
       { id: 'battery', ok: d.battery !== false, title: 'לאשר פעולה ברקע', why: 'כדי שחיסכון בסוללה לא יעצור את התזכורות. בוחרים "אישור" או "אין הגבלות".' }
     ];
+    if (NAT.geo && state.list.some(function (r) { return S.isLoc(r) && !r.done; })) {
+      var gs = {}; try { gs = await NAT.geo.status(); } catch (e) {}
+      st.push({ id: 'geo', ok: !!(gs.fine && gs.background), title: 'לאשר מיקום ברקע', why: 'בשביל התזכורות לפי מקום. בחלון שנפתח בוחרים "לאפשר כל הזמן".' });
+    }
     if (d.aggressive) st.push({ id: 'auto', ok: !!state.settings.autostartDone, title: 'להדליק הפעלה אוטומטית', why: 'בטלפון הזה זה הכרחי, אחרת התזכורות נעצרות כשסוגרים את האפליקציה. במסך שנפתח מחפשים "תזכורות" (הפעמון הכחול) ומדליקים.' });
     return st;
   }
@@ -825,6 +831,7 @@
       if (w === 'notif') { await NAT.request().catch(function () {}); DB.sync(); refreshBanner(); }
       if (w === 'exact') NAT.openExact();
       if (w === 'battery') NAT.requestBattery();
+      if (w === 'geo') { try { var g0 = await NAT.geo.status(); if (!g0.fine) await NAT.geo.requestLocation(); await NAT.geo.requestBackground(); } catch (e2) {} }
       if (w === 'auto') { state.settings.autostartDone = true; await saveSettings(); NAT.openAutostart(); }
       if (w === 'test') { await NAT.test(5); toast('בעוד 5 שניות תקפוץ התראת בדיקה'); return; }
       setTimeout(function () { draw(); }, 400);
