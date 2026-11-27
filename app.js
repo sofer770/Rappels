@@ -849,8 +849,8 @@
     var pushTxt = { on: NAT ? '✅ פעילות. התזכורות מתוזמנות בטלפון עצמו ויקפצו גם כשהאפליקציה סגורה, גם בלי אינטרנט.' : '✅ פעילות. התזכורות יקפצו גם כשהאפליקציה סגורה.', off: 'כבויות.', denied: '⛔ חסומות בדפדפן. צריך לאשר בהגדרות האתר (סמל המנעול ליד הכתובת).', 'ios-install': 'באייפון צריך קודם להתקין את האפליקציה למסך הבית.', unsupported: 'הדפדפן הזה לא תומך בהתראות.', 'no-server': '⚠️ פעילות רק כשהאפליקציה פתוחה (שרת ההתראות לא זמין).' }[ps];
     var h = '<h2><span class="grow">' + ic('gear') + ' הגדרות</span><button class="icon-btn" data-x="close">' + ic('x') + '</button></h2>';
     h += '<div class="card"><h3>' + ic('bell') + ' התראות</h3><p>' + pushTxt + '</p>' + (dev && dev.lastSync ? '<p class="small">' + (NAT ? 'תזמון אחרון בטלפון: ' : 'סנכרון אחרון עם השרת: ') + esc(whenLabel(dev.lastSync)) + ' · ' + (dev.lastJobs || 0) + ' התראות מתוזמנות</p>' : '') +
-      '<div class="row" style="flex-wrap:wrap">' + (ps !== 'on' ? '<button class="btn primary" data-s="enable">הפעלת התראות</button>' : '') + '<button class="btn" data-s="test">בדיקה עכשיו</button><button class="btn" data-s="test30">בדיקה בעוד 30 שניות</button>' + (NAT ? '<button class="btn" data-s="exact">הרשאת שעון מדויק</button>' : '') + '</div>' +
-      '<p class="small">בבדיקה בעוד 30 שניות אפשר לסגור את האפליקציה לגמרי ולראות שההתראה קופצת.' + (NAT ? ' בשיאומי: בפרטי האפליקציה להדליק "הפעלה אוטומטית" ולבחור בסוללה "אין הגבלות".' : '') + '</p><p class="small" id="diag">בודק מצב...</p></div>';
+      '<div class="row" style="flex-wrap:wrap">' + (ps !== 'on' ? '<button class="btn primary" data-s="enable">הפעלת התראות</button>' : '') + '<button class="btn" data-s="test">בדיקה עכשיו</button><button class="btn" data-s="test30">בדיקה בעוד 30 שניות</button>' + (NAT ? '<button class="btn" data-s="exact">הרשאת שעון מדויק</button><button class="btn" data-s="autostart">הפעלה אוטומטית</button>' : '') + '</div>' +
+      '<p class="small">בבדיקה בעוד 30 שניות אפשר לסגור את האפליקציה לגמרי ולראות שההתראה קופצת.' + (NAT ? ' בשיאומי: לוחצים "הפעלה אוטומטית" ומדליקים את תזכורות, ובפרטי האפליקציה בוחרים בסוללה "אין הגבלות".' : '') + '</p><p class="small" id="diag">בודק מצב...</p></div>';
     h += '<div class="card"><h3>' + ic('install') + ' התקנה</h3>' + (standalone() ? '<p>✅ האפליקציה מותקנת במכשיר הזה.</p>' : '<button class="btn primary" data-s="install">' + ic('install') + ' התקנת האפליקציה</button>') + '</div>';
     h += '<div class="card"><h3>🎵 צליל ברירת מחדל</h3><div class="sounds">' + SND.list.map(function (s) { return '<button class="snd' + (st.sound === s.id ? ' on' : '') + '" data-snd="' + s.id + '"><span class="play">' + ic('play') + '</span>' + s.name + '</button>'; }).join('') + '</div>' +
       '<div class="field" style="margin-top:12px"><label for="s-vol">עוצמה</label><input type="range" id="s-vol" min="0.1" max="1" step="0.05" value="' + st.volume + '" style="width:100%;accent-color:var(--accent)"></div>' +
@@ -881,6 +881,7 @@
       if (a === 'enable') { await enablePush(); closeSheet(); openSettings(); }
       if (a === 'test' || a === 'test30') testPush(a === 'test30' ? 30 : 0);
       if (a === 'exact' && NAT) NAT.openExact();
+      if (a === 'autostart' && NAT) NAT.openAutostart();
       if (a === 'install') { closeSheet(); doInstall(); }
       if (a === 'export') exportBackup();
       if (a === 'ics') exportICS();
