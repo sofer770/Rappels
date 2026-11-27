@@ -888,7 +888,8 @@
       var send = function () { return fetch(DB.api('test'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: dev.id, secret: dev.secret, delay: delay }) }).then(function (x) { return x.json(); }); };
       var r = await withTimeout(send(), 15000, 'timeout').catch(function (e) { return { error: e.message }; });
       if (r.error === 'missing' || r.error === 'forbidden') { await DB.sync({ sub: true }); r = await withTimeout(send(), 15000, 'timeout').catch(function (e) { return { error: e.message }; }); }
-      if (r.ok) toast(delay ? 'בעוד 30 שניות תקפוץ התראה. אפשר לסגור את האפליקציה עכשיו.' : 'נשלחה התראת בדיקה');
+      if (r.ok && !delay && r.status && r.status !== 201 && r.status !== 200) toast('שירות ההתראות של הטלפון דחה את ההודעה (קוד ' + r.status + '). שלחו לי צילום של שורת המצב.');
+      else if (r.ok) toast(delay ? 'בעוד 30 שניות תקפוץ התראה. אפשר לסגור את האפליקציה עכשיו.' : 'נשלחה התראת בדיקה (קוד ' + (r.status || '?') + ')');
       else toast('הבדיקה נכשלה (' + (r.error || 'שגיאה') + '). נסו לרענן ולהפעיל את ההתראות מחדש.');
     } catch (e) { toast('הבדיקה נכשלה: ' + (e && e.message || e)); }
   }
@@ -901,6 +902,16 @@
     out.push('מנוי להתראות: ' + (sub ? 'יש' : 'אין'));
     try { var h = await withTimeout(fetch(DB.api('health')).then(function (r) { return r.json(); }), 8000, 't'); out.push('שרת: ' + (h.ok ? 'מחובר' : 'שגיאה')); } catch (e) { out.push('שרת: לא זמין'); }
     var dev = await DB.meta('device'); if (dev && dev.lastError) out.push('שגיאה אחרונה: ' + dev.lastError);
+    if (dev && dev.id) {
+      try {
+        var st = await withTimeout(fetch(DB.api('status'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: dev.id, secret: dev.secret }) }).then(function (r) { return r.json(); }), 8000, 't');
+        if (!st.ok) out.push('בשרת: המכשיר לא רשום');
+        else {
+          out.push('בשרת: ' + (st.hasSub ? 'רשום (' + st.host + ')' : 'בלי מנוי') + ', ' + st.jobs + ' ממתינות');
+          if (st.last) out.push('שליחה אחרונה: ' + whenLabel(st.last.at) + ' · קוד ' + st.last.status + (st.last.text ? ' · ' + st.last.text : ''));
+        }
+      } catch (e) {}
+    }
     out.push('מותקנת: ' + (standalone() ? 'כן' : 'לא') + ' · ' + (isIOS() ? 'iOS' : /android/i.test(navigator.userAgent) ? 'Android' : 'מחשב'));
     return out.join(' · ');
   }
