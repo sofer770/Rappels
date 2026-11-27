@@ -926,13 +926,14 @@
     if (dev && dev.id) {
       try {
         var st = await withTimeout(fetch(DB.api('status'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: dev.id, secret: dev.secret }) }).then(function (r) { return r.json(); }), 8000, 't');
-        if (!st.ok) out.push('בשרת: המכשיר לא רשום');
+        if (!st.ok) out.push('בשרת: המכשיר לא רשום (' + (st.error || '?') + (st.detail ? ': ' + st.detail : '') + ')');
         else {
           out.push('בשרת: ' + (st.hasSub ? 'רשום (' + st.host + ')' : 'בלי מנוי') + ', ' + st.jobs + ' ממתינות');
           if (st.last) out.push('שליחה אחרונה: ' + whenLabel(st.last.at) + ' · קוד ' + st.last.status + (st.last.text ? ' · ' + st.last.text : ''));
         }
-      } catch (e) {}
+      } catch (e) { out.push('בדיקת מצב בשרת נכשלה: ' + (e && e.message || e)); }
     }
+    if (dev && dev.id) out.push('מזהה: ' + dev.id.slice(0, 6) + ' · כתובת שרת: ' + (DB.api('') || '').replace(/^https?:\/\//, '').replace(/\/api\/$/, '') + (dev.syncError ? ' · שגיאת סנכרון: ' + dev.syncError : ''));
     out.push('מותקנת: ' + (standalone() ? 'כן' : 'לא') + ' · ' + (isIOS() ? 'iOS' : /android/i.test(navigator.userAgent) ? 'Android' : 'מחשב'));
     return out.join(' · ');
   }
