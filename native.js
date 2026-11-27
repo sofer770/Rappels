@@ -139,6 +139,8 @@
 
   var DEV = C.registerPlugin('TzDevice');
   async function openAutostart() { try { await DEV.openAutostart(); } catch (e) {} }
+  async function device() { try { return await DEV.info(); } catch (e) { return {}; } }
+  async function requestBattery() { try { await DEV.requestBattery(); } catch (e) {} }
 
   async function openExact() { try { await LN.changeExactNotificationSetting(); } catch (e) {} }
 
@@ -146,7 +148,7 @@
   g.Store.sync = function () { return schedule(); };
 
   g.TZNative = {
-    perm: perm, request: request, schedule: schedule, test: test, diag: diag, exact: exact, openExact: openExact, openAutostart: openAutostart, clearFor: clearFor, dictate: dictate,
+    perm: perm, request: request, schedule: schedule, test: test, diag: diag, exact: exact, openExact: openExact, openAutostart: openAutostart, device: device, requestBattery: requestBattery, clearFor: clearFor, dictate: dictate,
     onAction: function (fn) { handler = fn; var q = pending; pending = []; q.forEach(fn); }
   };
   setup();
