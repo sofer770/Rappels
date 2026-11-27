@@ -35,6 +35,7 @@ export default {
 
 const ID_RE = /^[A-Za-z0-9_-]{16,64}$/;
 const MAX_JOBS = 400;
+const SERVER_VERSION = '2026-11-27b'; // מאפשר לבדוק שהשרת באמת עודכן
 
 export class Hub {
   constructor(state, env) {
@@ -85,7 +86,7 @@ export class Hub {
       if (path === 'health') {
         const d = this.sql.exec('SELECT COUNT(*) AS c FROM devices').one().c;
         const j = this.sql.exec('SELECT COUNT(*) AS c FROM jobs').one().c;
-        return json({ ok: true, devices: d, jobs: j, alarm: await this.state.storage.getAlarm() });
+        return json({ ok: true, version: SERVER_VERSION, devices: d, jobs: j, alarm: await this.state.storage.getAlarm() });
       }
       if (req.method !== 'POST') return json({ error: 'method' }, 405);
       if (path === '_tick') { const n = await this.run(); return json({ sent: n }); }
