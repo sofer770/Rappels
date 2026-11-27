@@ -1,5 +1,5 @@
 /* תזכורות - Service Worker: עבודה בלי רשת, הצגת התראות כשהאפליקציה סגורה, ופעולות מתוך ההתראה. */
-var VERSION = 'tz-v2.0.1';
+var VERSION = 'tz-v2.0.2';
 importScripts('config.js', 'schedule.js', 'store.js');
 
 var SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'schedule.js', 'store.js', 'sounds.js', 'holidays.js', 'config.js', 'manifest.json', 'logo.png', 'icon-192.png', 'badge.png', 'voice-note.js'];
