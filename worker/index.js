@@ -105,7 +105,8 @@ export class Hub {
         this.sql.exec('UPDATE devices SET seen = ? WHERE id = ?', Date.now(), body.id);
         const now = Date.now();
         const jobs = Array.isArray(body.jobs) ? body.jobs.slice(0, MAX_JOBS) : [];
-        this.sql.exec('DELETE FROM jobs WHERE device = ? AND t > ?', body.id, now - 5000);
+        // בדיקות שתוזמנו ("בדיקה בעוד 30 שניות") נשארות גם כשהאפליקציה מסתנכרנת בינתיים
+        this.sql.exec(`DELETE FROM jobs WHERE device = ? AND t > ? AND payload NOT LIKE '%"kind":"test"%'`, body.id, now - 5000);
         let n = 0;
         for (const j of jobs) {
           const t = Number(j.t);
