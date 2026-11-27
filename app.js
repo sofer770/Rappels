@@ -267,7 +267,9 @@
     view = view || $('#view');
     var fn = { home: renderHome, list: renderList, cal: renderCal, bday: renderBdays, done: renderDone }[state.tab] || renderHome;
     var focusSearch = document.activeElement && document.activeElement.id === 'search';
+    var qi = $('#quick-in'), qv = qi ? qi.value : '', qf = qi && document.activeElement === qi;
     view.innerHTML = fn();
+    var qn = $('#quick-in'); if (qn && qv) qn.value = qv; if (qn && qf) qn.focus();
     $$('.tabs button').forEach(function (b) { b.classList.toggle('on', b.dataset.tab === state.tab); });
     var now = new Date(), hd = H.date(now);
     $('#today-label').textContent = 'יום ' + DOW_FULL[now.getDay()] + ', ' + now.getDate() + ' ב' + MONTHS[now.getMonth()] + (state.settings.showHeb ? ' · ' + hd.full : '');
