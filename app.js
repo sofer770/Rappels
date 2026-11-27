@@ -2,6 +2,7 @@
 (function () {
   'use strict';
   var S = window.Sched, DB = window.Store, SND = window.Sounds, H = window.Heb;
+  var NAT = window.TZNative || null; // באפליקציית האנדרואיד: התראות מקומיות בטלפון
   var MIN = 60000, DAY = 86400000;
   var $ = function (sel, el) { return (el || document).querySelector(sel); };
   var $$ = function (sel, el) { return Array.prototype.slice.call((el || document).querySelectorAll(sel)); };
@@ -614,6 +615,7 @@
   }
   // הכתבה בקול
   function dictate(cb, btn) {
+    if (NAT) return NAT.dictate(cb, btn, toast);
     var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) { toast('הדפדפן הזה לא תומך בהקלטה. אפשר להשתמש בכפתור המיקרופון במקלדת של הטלפון.'); return; }
     var rec = new SR(); rec.lang = 'he-IL'; rec.interimResults = false; rec.maxAlternatives = 1;
@@ -643,7 +645,7 @@
     var key = j.rid + ':' + j.t;
     if (fired[key]) return; fired[key] = 1;
     if (document.visibilityState === 'visible') return showAlarm(j);
-    if (!pushActive && Notification && Notification.permission === 'granted' && navigator.serviceWorker) {
+    if (!NAT && !pushActive && typeof Notification !== 'undefined' && Notification.permission === 'granted' && navigator.serviceWorker) {
       navigator.serviceWorker.ready.then(function (reg) { reg.showNotification(j.title, { body: j.body, icon: 'icon-192.png', badge: 'badge.png', dir: 'rtl', lang: 'he', tag: 'r-' + j.rid, renotify: true, requireInteraction: true, data: j, actions: [{ action: 'done', title: '✓ בוצע' }, { action: 'snooze', title: '💤 עוד 10 דק\'' }] }); });
     }
     alarmQ.push(j);
@@ -697,16 +699,18 @@
   }
   function nextAlarm() { var j = alarmQ.shift(); if (j) showAlarm(j); }
   function closeNotif(rid) {
+    if (NAT) { NAT.clearFor(rid); return; }
     if (!navigator.serviceWorker) return;
     navigator.serviceWorker.ready.then(function (reg) { return reg.getNotifications({ tag: 'r-' + rid }); }).then(function (ns) { (ns || []).forEach(function (n) { n.close(); }); }).catch(function () {});
   }
 
   // ---------- התראות דחיפה (גם כשהאפליקציה סגורה) ----------
   function isIOS() { return /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); }
-  function standalone() { return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true; }
+  function standalone() { return !!NAT || window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true; }
   function pushSupported() { return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window; }
   function b64ToBytes(s) { s = s.replace(/-/g, '+').replace(/_/g, '/'); var bin = atob(s + '==='.slice((s.length + 3) % 4)); return Uint8Array.from(bin, function (c) { return c.charCodeAt(0); }); }
   async function pushState() {
+    if (NAT) { var np = await NAT.perm(); return np === 'granted' ? 'on' : np === 'denied' ? 'denied' : 'off'; }
     if (!pushSupported()) return isIOS() && !standalone() ? 'ios-install' : 'unsupported';
     if (Notification.permission === 'denied') return 'denied';
     var dev = await DB.meta('device');
@@ -717,6 +721,15 @@
     return Promise.race([p, new Promise(function (_, rej) { setTimeout(function () { rej(new Error(msg)); }, ms); })]);
   }
   async function enablePush(silent) {
+    if (NAT) {
+      var p = await NAT.request().catch(function () { return 'denied'; });
+      if (p !== 'granted') { showBlockedHelp(); refreshBanner(); return false; }
+      await DB.sync();
+      if ((await NAT.exact()) !== 'granted') toast('כדי שהתזכורות יקפצו בדקה המדויקת, צריך לאשר "שעונים מעוררים ותזכורות".', 'לאישור', function () { NAT.openExact(); });
+      else if (!silent) toast('ההתראות הופעלו ✓ הן יקפצו גם כשהאפליקציה סגורה');
+      refreshBanner();
+      return true;
+    }
     if (!pushSupported()) { if (isIOS() && !standalone()) showInstall(); else toast('הדפדפן הזה לא תומך בהתראות. מומלץ Chrome, Edge או Safari מעודכן.'); return false; }
     if (Notification.permission === 'denied') { showBlockedHelp(); refreshBanner(); return false; }
     try {
@@ -769,7 +782,7 @@
     s.addEventListener('click', function (e) { if (e.target.closest('[data-x="close"]')) closeSheet(); if (e.target.closest('[data-x="retry"]')) { closeSheet(); enablePush(); } });
   }
   function showBlockedHelp() {
-    var h = isIOS() ? '<ol class="steps"><li>פותחים את <b>הגדרות</b> באייפון.</li><li>גוללים ל<b>התראות</b> ובוחרים <b>תזכורות</b>.</li><li>מפעילים <b>אפשר התראות</b>.</li></ol>'
+    var h = NAT ? '<ol class="steps"><li>פותחים <b>הגדרות</b> בטלפון ← <b>אפליקציות</b> ← <b>תזכורות</b>.</li><li><b>התראות</b> ← להפעיל את כל האפשרויות.</li><li>חוזרים לאפליקציה ולוחצים שוב על הבדיקה.</li></ol>' : isIOS() ? '<ol class="steps"><li>פותחים את <b>הגדרות</b> באייפון.</li><li>גוללים ל<b>התראות</b> ובוחרים <b>תזכורות</b>.</li><li>מפעילים <b>אפשר התראות</b>.</li></ol>'
       : '<ol class="steps"><li>לוחצים על סמל <b>המנעול</b> (או סמל ההגדרות) משמאל לכתובת האתר בשורת הכתובת.</li><li>ליד <b>התראות</b> בוחרים <b>אפשר</b>.</li><li>מרעננים את הדף ולוחצים שוב על הבדיקה.</li></ol><p class="small">באפליקציה מותקנת במחשב: תפריט ⋮ בחלון האפליקציה ← פרטי האפליקציה / הגדרות האתר ← התראות ← אפשר.</p>';
     var s = openSheet('<h2><span class="grow">' + ic('bell') + ' ההתראות חסומות</span><button class="icon-btn" data-x="close">' + ic('x') + '</button></h2><div class="card"><p>הדפדפן חוסם התראות מהאפליקציה, ולכן היא לא יכולה להקפיץ תזכורות. כך מאשרים:</p>' + h + '</div>');
     s.addEventListener('click', function (e) { if (e.target.closest('[data-x="close"]')) closeSheet(); });
@@ -833,16 +846,16 @@
 
   async function openSettings() {
     var st = state.settings, ps = await pushState(), dev = await DB.meta('device');
-    var pushTxt = { on: '✅ פעילות. התזכורות יקפצו גם כשהאפליקציה סגורה.', off: 'כבויות.', denied: '⛔ חסומות בדפדפן. צריך לאשר בהגדרות האתר (סמל המנעול ליד הכתובת).', 'ios-install': 'באייפון צריך קודם להתקין את האפליקציה למסך הבית.', unsupported: 'הדפדפן הזה לא תומך בהתראות.', 'no-server': '⚠️ פעילות רק כשהאפליקציה פתוחה (שרת ההתראות לא זמין).' }[ps];
+    var pushTxt = { on: NAT ? '✅ פעילות. התזכורות מתוזמנות בטלפון עצמו ויקפצו גם כשהאפליקציה סגורה, גם בלי אינטרנט.' : '✅ פעילות. התזכורות יקפצו גם כשהאפליקציה סגורה.', off: 'כבויות.', denied: '⛔ חסומות בדפדפן. צריך לאשר בהגדרות האתר (סמל המנעול ליד הכתובת).', 'ios-install': 'באייפון צריך קודם להתקין את האפליקציה למסך הבית.', unsupported: 'הדפדפן הזה לא תומך בהתראות.', 'no-server': '⚠️ פעילות רק כשהאפליקציה פתוחה (שרת ההתראות לא זמין).' }[ps];
     var h = '<h2><span class="grow">' + ic('gear') + ' הגדרות</span><button class="icon-btn" data-x="close">' + ic('x') + '</button></h2>';
-    h += '<div class="card"><h3>' + ic('bell') + ' התראות</h3><p>' + pushTxt + '</p>' + (dev && dev.lastSync ? '<p class="small">סנכרון אחרון עם השרת: ' + esc(whenLabel(dev.lastSync)) + ' · ' + (dev.lastJobs || 0) + ' התראות מתוזמנות</p>' : '') +
-      '<div class="row" style="flex-wrap:wrap">' + (ps !== 'on' ? '<button class="btn primary" data-s="enable">הפעלת התראות</button>' : '') + '<button class="btn" data-s="test">בדיקה עכשיו</button><button class="btn" data-s="test30">בדיקה בעוד 30 שניות</button></div>' +
+    h += '<div class="card"><h3>' + ic('bell') + ' התראות</h3><p>' + pushTxt + '</p>' + (dev && dev.lastSync ? '<p class="small">' + (NAT ? 'תזמון אחרון בטלפון: ' : 'סנכרון אחרון עם השרת: ') + esc(whenLabel(dev.lastSync)) + ' · ' + (dev.lastJobs || 0) + ' התראות מתוזמנות</p>' : '') +
+      '<div class="row" style="flex-wrap:wrap">' + (ps !== 'on' ? '<button class="btn primary" data-s="enable">הפעלת התראות</button>' : '') + '<button class="btn" data-s="test">בדיקה עכשיו</button><button class="btn" data-s="test30">בדיקה בעוד 30 שניות</button>' + (NAT ? '<button class="btn" data-s="exact">הרשאת שעון מדויק</button>' : '') + '</div>' +
       '<p class="small">בבדיקה בעוד 30 שניות אפשר לסגור את האפליקציה לגמרי ולראות שההתראה קופצת.</p><p class="small" id="diag">בודק מצב...</p></div>';
     h += '<div class="card"><h3>' + ic('install') + ' התקנה</h3>' + (standalone() ? '<p>✅ האפליקציה מותקנת במכשיר הזה.</p>' : '<button class="btn primary" data-s="install">' + ic('install') + ' התקנת האפליקציה</button>') + '</div>';
     h += '<div class="card"><h3>🎵 צליל ברירת מחדל</h3><div class="sounds">' + SND.list.map(function (s) { return '<button class="snd' + (st.sound === s.id ? ' on' : '') + '" data-snd="' + s.id + '"><span class="play">' + ic('play') + '</span>' + s.name + '</button>'; }).join('') + '</div>' +
       '<div class="field" style="margin-top:12px"><label for="s-vol">עוצמה</label><input type="range" id="s-vol" min="0.1" max="1" step="0.05" value="' + st.volume + '" style="width:100%;accent-color:var(--accent)"></div>' +
       '<label class="switch"><span>להשמיע שוב ושוב עד שלוחצים (כשהאפליקציה פתוחה)</span><input type="checkbox" id="s-loop"' + (st.loop ? ' checked' : '') + '></label>' +
-      '<p class="small">כשהאפליקציה סגורה, ההתראה מגיעה עם צליל ההתראות של הטלפון או המחשב. הצלילים שכאן מתנגנים כשהאפליקציה פתוחה או ברקע.</p></div>';
+      (NAT ? '<p class="small">הצליל שנבחר מתנגן גם כשהאפליקציה סגורה.</p>' : '<p class="small">כשהאפליקציה סגורה, ההתראה מגיעה עם צליל ההתראות של הטלפון או המחשב. הצלילים שכאן מתנגנים כשהאפליקציה פתוחה או ברקע.</p>') + '</div>';
     h += '<div class="card"><h3>' + ic('clock') + ' ברירות מחדל</h3><div class="row"><div class="field"><label for="s-snz">דחייה מתוך התראה</label><select class="input" id="s-snz">' + opts([[5, '5 דקות'], [10, '10 דקות'], [15, '15 דקות'], [30, 'חצי שעה'], [60, 'שעה']], st.snoozeMin) + '</select></div><div class="field"><label for="s-time">שעה רגילה</label><input class="input" type="time" id="s-time" value="' + st.defaultTime + '"></div></div>' +
       '<div class="row"><div class="field"><label for="s-nag">נודניק לתזכורת חדשה</label><select class="input" id="s-nag">' + opts(NAGS, st.nag) + '</select></div><div class="field"><label for="s-lead">התראה מוקדמת</label><select class="input" id="s-lead">' + opts(LEADS, st.lead) + '</select></div></div>' +
       '<div class="row"><div class="field"><label for="s-btime">שעת תזכורת יום הולדת</label><input class="input" type="time" id="s-btime" value="' + st.bdayTime + '"></div><div class="field"><label for="s-blead">ימי הולדת: התראה מוקדמת</label><select class="input" id="s-blead">' + opts(LEADS, st.bdayLead) + '</select></div></div></div>';
@@ -867,6 +880,7 @@
       var a = b.dataset.s;
       if (a === 'enable') { await enablePush(); closeSheet(); openSettings(); }
       if (a === 'test' || a === 'test30') testPush(a === 'test30' ? 30 : 0);
+      if (a === 'exact' && NAT) NAT.openExact();
       if (a === 'install') { closeSheet(); doInstall(); }
       if (a === 'export') exportBackup();
       if (a === 'ics') exportICS();
@@ -900,6 +914,12 @@
   }
   async function testPush(delay) {
     try {
+      if (NAT) {
+        if ((await NAT.perm()) !== 'granted') { var okn = await enablePush(true); if (!okn) return; }
+        await NAT.test(delay);
+        toast(delay ? 'בעוד 30 שניות תקפוץ התראה. אפשר לסגור את האפליקציה עכשיו.' : 'נשלחה התראת בדיקה');
+        return;
+      }
       if (!pushSupported() || Notification.permission !== 'granted') { var ok = await enablePush(true); if (!ok) return; }
       toast('שולח בדיקה...');
       var ps = await pushState();
@@ -915,6 +935,7 @@
     } catch (e) { toast('הבדיקה נכשלה: ' + (e && e.message || e)); }
   }
   async function diagnostics() {
+    if (NAT) return NAT.diag();
     var out = [];
     out.push('התראות בדפדפן: ' + ('Notification' in window ? Notification.permission : 'לא נתמך'));
     var reg = null; try { reg = navigator.serviceWorker && await withTimeout(navigator.serviceWorker.getRegistration(), 3000, 't'); } catch (e) {}
@@ -1103,7 +1124,7 @@
     render();
     if (state.settings.pinHash) lock();
 
-    if ('serviceWorker' in navigator) {
+    if (!NAT && 'serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').then(function (reg) { reg.update().catch(function () {}); }).catch(function () {});
       navigator.serviceWorker.addEventListener('message', function (e) {
         var m = e.data || {};
@@ -1112,6 +1133,13 @@
         if (m.type === 'open' && m.data) { var r = findR(m.data.rid); if (r && !alarmOpen) openEditor(r); }
       });
     }
+    if (NAT) NAT.onAction(function (a) {
+      var d = a.data || {}, r = findR(d.rid);
+      if (!r || d.rid === 'test') return;
+      if (a.action === 'done') { S.markDone(r, Date.now()); save(r); toast('בוצע ✓'); }
+      else if (a.action === 'snooze') { S.snooze(r, Date.now(), state.settings.snoozeMin || 10); save(r); toast('נדחה ל-' + whenLabel(r.snoozeUntil)); }
+      else { fired[r.id + ':' + d.t] = 1; if (!alarmOpen) showAlarm({ rid: r.id, t: d.t || Date.now(), occ: d.occ || d.t, title: S.titleFor(r, d.occ || d.t || Date.now()), kind: d.kind || 'main' }); }
+    });
     refreshBanner();
     var q = new URLSearchParams(location.search);
     if (q.get('open')) { var r0 = findR(q.get('open')); if (r0) { var st0 = S.status(r0, Date.now()); if (st0.state === 'overdue' || st0.state === 'snoozed') showAlarm({ rid: r0.id, t: Date.now(), occ: st0.at, title: S.titleFor(r0, st0.at), kind: 'main' }); else openEditor(r0); } history.replaceState(null, '', location.pathname); }

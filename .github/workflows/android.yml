@@ -1,0 +1,51 @@
+# בונה את אפליקציית האנדרואיד (קובץ APK) ומפרסם אותה בעמוד ההורדות של המאגר.
+name: Android app
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+      - run: npm ci
+      - run: npm test
+      - name: Prepare web files
+        run: node scripts/build-www.mjs && npx cap sync android
+      - name: Build APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon --stacktrace
+      - run: cp android/app/build/outputs/apk/release/app-release.apk tizkorot.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tizkorot-apk
+          path: tizkorot.apk
+      - name: Publish download
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view android >/dev/null 2>&1 || gh release create android --title "תזכורות לאנדרואיד" --notes "קובץ ההתקנה של אפליקציית התזכורות לאנדרואיד. מורידים את tizkorot.apk בטלפון ופותחים אותו."
+          gh release upload android tizkorot.apk --clobber

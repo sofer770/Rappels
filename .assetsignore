@@ -12,3 +12,8 @@ REQUIREMENTS.md
 CNAME
 .assetsignore
 .gitignore
+android
+www
+assets
+scripts
+capacitor.config.json
