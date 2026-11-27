@@ -787,6 +787,56 @@
     var s = openSheet('<h2><span class="grow">' + ic('bell') + ' ההתראות חסומות</span><button class="icon-btn" data-x="close">' + ic('x') + '</button></h2><div class="card"><p>הדפדפן חוסם התראות מהאפליקציה, ולכן היא לא יכולה להקפיץ תזכורות. כך מאשרים:</p>' + h + '</div>');
     s.addEventListener('click', function (e) { if (e.target.closest('[data-x="close"]')) closeSheet(); });
   }
+  // ---------- הגדרה ראשונה באפליקציית האנדרואיד ----------
+  // כל שלב הוא כפתור אחד שפותח את חלון האישור של הטלפון. סימן ✓ מופיע כשהשלב הושלם.
+  async function setupSteps() {
+    var d = await NAT.device();
+    var st = [
+      { id: 'notif', ok: (await NAT.perm()) === 'granted', title: 'לאשר התראות', why: 'כדי שהתזכורות יקפצו על המסך.' },
+      { id: 'exact', ok: (await NAT.exact()) === 'granted', title: 'לאשר שעונים מעוררים', why: 'כדי שהתזכורת תקפוץ בדקה המדויקת. מדליקים את המתג וחוזרים.' },
+      { id: 'battery', ok: d.battery !== false, title: 'לאשר פעולה ברקע', why: 'כדי שחיסכון בסוללה לא יעצור את התזכורות. בוחרים "אישור" או "אין הגבלות".' }
+    ];
+    if (d.aggressive) st.push({ id: 'auto', ok: !!state.settings.autostartDone, title: 'להדליק הפעלה אוטומטית', why: 'בטלפון הזה זה הכרחי, אחרת התזכורות נעצרות כשסוגרים את האפליקציה. במסך שנפתח מחפשים "תזכורות" (הפעמון הכחול) ומדליקים.' });
+    return st;
+  }
+  async function openSetup(auto) {
+    if (!NAT) return;
+    var steps = await setupSteps();
+    if (auto && steps.every(function (x) { return x.ok; })) return;
+    if (auto && $('#sheet-wrap')) return;
+    var sheet = openSheet('<div id="setup"></div>');
+    var box = $('#setup', sheet);
+    async function draw(st) {
+      st = st || await setupSteps();
+      var left = st.filter(function (x) { return !x.ok; }).length;
+      box.innerHTML = '<h2><span class="grow">' + ic('bell') + ' הגדרה מהירה</span><button class="icon-btn" data-w="close">' + ic('x') + '</button></h2>' +
+        '<p>' + (left ? 'עוד ' + (left === 1 ? 'שלב אחד קצר' : left + ' שלבים קצרים') + ', וכל התזכורות יקפצו בזמן גם כשהאפליקציה סגורה.' : '✅ הכל מוכן! התזכורות יקפצו בזמן גם כשהאפליקציה סגורה.') + '</p>' +
+        st.map(function (x, i) {
+          return '<div class="card" style="display:flex;gap:12px;align-items:center;margin:10px 0' + (x.ok ? ';opacity:.6' : '') + '"><div style="font-size:24px;min-width:32px;text-align:center;font-weight:800">' + (x.ok ? '✅' : (i + 1)) + '</div>' +
+            '<div class="grow"><b>' + x.title + '</b><div class="small">' + x.why + '</div></div>' +
+            (x.ok ? '' : '<button class="btn primary" data-w="' + x.id + '">אישור</button>') + '</div>';
+        }).join('') +
+        (left ? '<button class="btn" data-w="close" style="width:100%">אחר כך</button>' : '<div class="row"><button class="btn" data-w="test" style="flex:1">התראת בדיקה</button><button class="btn primary" data-w="close" style="flex:1">סיום</button></div>');
+    }
+    box.addEventListener('click', async function (e) {
+      var b = e.target.closest('[data-w]'); if (!b) return;
+      var w = b.dataset.w;
+      if (w === 'close') { closeSheet(); return; }
+      if (w === 'notif') { await NAT.request().catch(function () {}); DB.sync(); refreshBanner(); }
+      if (w === 'exact') NAT.openExact();
+      if (w === 'battery') NAT.requestBattery();
+      if (w === 'auto') { state.settings.autostartDone = true; await saveSettings(); NAT.openAutostart(); }
+      if (w === 'test') { await NAT.test(5); toast('בעוד 5 שניות תקפוץ התראת בדיקה'); return; }
+      setTimeout(function () { draw(); }, 400);
+    });
+    // כשחוזרים מחלון ההגדרות של הטלפון, מעדכנים את הסימנים
+    document.addEventListener('visibilitychange', function rd() {
+      if (!document.getElementById('setup')) { document.removeEventListener('visibilitychange', rd); return; }
+      if (document.visibilityState === 'visible') setTimeout(function () { draw(); DB.sync(); }, 300);
+    });
+    draw(steps);
+  }
+
   async function refreshBanner() {
     var st = await pushState(), b = $('#notif-banner');
     pushActive = st === 'on';
@@ -849,7 +899,7 @@
     var pushTxt = { on: NAT ? '✅ פעילות. התזכורות מתוזמנות בטלפון עצמו ויקפצו גם כשהאפליקציה סגורה, גם בלי אינטרנט.' : '✅ פעילות. התזכורות יקפצו גם כשהאפליקציה סגורה.', off: 'כבויות.', denied: '⛔ חסומות בדפדפן. צריך לאשר בהגדרות האתר (סמל המנעול ליד הכתובת).', 'ios-install': 'באייפון צריך קודם להתקין את האפליקציה למסך הבית.', unsupported: 'הדפדפן הזה לא תומך בהתראות.', 'no-server': '⚠️ פעילות רק כשהאפליקציה פתוחה (שרת ההתראות לא זמין).' }[ps];
     var h = '<h2><span class="grow">' + ic('gear') + ' הגדרות</span><button class="icon-btn" data-x="close">' + ic('x') + '</button></h2>';
     h += '<div class="card"><h3>' + ic('bell') + ' התראות</h3><p>' + pushTxt + '</p>' + (dev && dev.lastSync ? '<p class="small">' + (NAT ? 'תזמון אחרון בטלפון: ' : 'סנכרון אחרון עם השרת: ') + esc(whenLabel(dev.lastSync)) + ' · ' + (dev.lastJobs || 0) + ' התראות מתוזמנות</p>' : '') +
-      '<div class="row" style="flex-wrap:wrap">' + (ps !== 'on' ? '<button class="btn primary" data-s="enable">הפעלת התראות</button>' : '') + '<button class="btn" data-s="test">בדיקה עכשיו</button><button class="btn" data-s="test30">בדיקה בעוד 30 שניות</button>' + (NAT ? '<button class="btn" data-s="exact">הרשאת שעון מדויק</button><button class="btn" data-s="autostart">הפעלה אוטומטית</button>' : '') + '</div>' +
+      '<div class="row" style="flex-wrap:wrap">' + (ps !== 'on' ? '<button class="btn primary" data-s="enable">הפעלת התראות</button>' : '') + '<button class="btn" data-s="test">בדיקה עכשיו</button><button class="btn" data-s="test30">בדיקה בעוד 30 שניות</button>' + (NAT ? '<button class="btn" data-s="exact">הרשאת שעון מדויק</button><button class="btn" data-s="autostart">הפעלה אוטומטית</button><button class="btn primary" data-s="setup">הגדרה מהירה</button>' : '') + '</div>' +
       '<p class="small">בבדיקה בעוד 30 שניות אפשר לסגור את האפליקציה לגמרי ולראות שההתראה קופצת.' + (NAT ? ' בשיאומי: לוחצים "הפעלה אוטומטית" ומדליקים את תזכורות, ובפרטי האפליקציה בוחרים בסוללה "אין הגבלות".' : '') + '</p><p class="small" id="diag">בודק מצב...</p></div>';
     h += '<div class="card"><h3>' + ic('install') + ' התקנה</h3>' + (standalone() ? '<p>✅ האפליקציה מותקנת במכשיר הזה.</p>' : '<button class="btn primary" data-s="install">' + ic('install') + ' התקנת האפליקציה</button>') + '</div>';
     h += '<div class="card"><h3>🎵 צליל ברירת מחדל</h3><div class="sounds">' + SND.list.map(function (s) { return '<button class="snd' + (st.sound === s.id ? ' on' : '') + '" data-snd="' + s.id + '"><span class="play">' + ic('play') + '</span>' + s.name + '</button>'; }).join('') + '</div>' +
@@ -882,6 +932,7 @@
       if (a === 'test' || a === 'test30') testPush(a === 'test30' ? 30 : 0);
       if (a === 'exact' && NAT) NAT.openExact();
       if (a === 'autostart' && NAT) NAT.openAutostart();
+      if (a === 'setup' && NAT) openSetup(false);
       if (a === 'install') { closeSheet(); doInstall(); }
       if (a === 'export') exportBackup();
       if (a === 'ics') exportICS();
@@ -1142,6 +1193,7 @@
       else { fired[r.id + ':' + d.t] = 1; if (!alarmOpen) showAlarm({ rid: r.id, t: d.t || Date.now(), occ: d.occ || d.t, title: S.titleFor(r, d.occ || d.t || Date.now()), kind: d.kind || 'main' }); }
     });
     refreshBanner();
+    if (NAT) setTimeout(function () { if (!locked) openSetup(true); }, 900);
     var q = new URLSearchParams(location.search);
     if (q.get('open')) { var r0 = findR(q.get('open')); if (r0) { var st0 = S.status(r0, Date.now()); if (st0.state === 'overdue' || st0.state === 'snoozed') showAlarm({ rid: r0.id, t: Date.now(), occ: st0.at, title: S.titleFor(r0, st0.at), kind: 'main' }); else openEditor(r0); } history.replaceState(null, '', location.pathname); }
     if (q.get('new')) { openEditor(null, q.get('new') === 'birthday' ? { type: 'birthday' } : null); history.replaceState(null, '', location.pathname); }
