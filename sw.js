@@ -1,5 +1,5 @@
 /* תזכורות - Service Worker: עבודה בלי רשת, הצגת התראות כשהאפליקציה סגורה, ופעולות מתוך ההתראה. */
-var VERSION = 'tz-v2.0.5';
+var VERSION = 'tz-v2.0.6';
 importScripts('config.js', 'schedule.js', 'store.js');
 
 var SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'schedule.js', 'store.js', 'sounds.js', 'holidays.js', 'config.js', 'manifest.json', 'logo.png', 'icon-192.png', 'badge.png', 'voice-note.js'];
@@ -32,7 +32,8 @@ function show(data) {
     icon: 'icon-192.png',
     badge: 'badge.png',
     dir: 'rtl', lang: 'he',
-    tag: 'r-' + (data.rid || 'x'),
+    // בדיקה מקבלת תג חדש בכל פעם, כדי שתקפוץ כהתראה חדשה ולא רק תחליף את הקודמת במגירה
+    tag: data.rid === 'test' ? 'test-' + (data.t || Date.now()) : 'r-' + (data.rid || 'x'),
     renotify: true,
     requireInteraction: data.kind !== 'lead',
     vibrate: [300, 120, 300, 120, 600],
