@@ -113,7 +113,8 @@
   }
 
   async function diag() {
-    var out = ['אפליקציית אנדרואיד', 'התראות: ' + (await perm()), 'שעון מדויק: ' + (await exact())];
+    var inf = {}; try { inf = await DEV.info(); } catch (e) {}
+    var out = ['אפליקציית אנדרואיד' + (inf.version ? ' ' + inf.version : ''), 'התראות: ' + (await perm()), 'שעון מדויק: ' + (await exact())];
     try { var p = await LN.getPending(); out.push('מתוזמנות בטלפון: ' + (p.notifications || []).length); } catch (e) {}
     if (last.at) out.push('תזמון אחרון: ' + new Date(last.at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }));
     if (last.error) out.push('שגיאה: ' + last.error);
@@ -136,13 +137,16 @@
     finally { if (btn) btn.classList.remove('rec'); }
   }
 
+  var DEV = C.registerPlugin('TzDevice');
+  async function openAutostart() { try { await DEV.openAutostart(); } catch (e) {} }
+
   async function openExact() { try { await LN.changeExactNotificationSetting(); } catch (e) {} }
 
   // מחליפים את הסנכרון עם השרת בתזמון מקומי
   g.Store.sync = function () { return schedule(); };
 
   g.TZNative = {
-    perm: perm, request: request, schedule: schedule, test: test, diag: diag, exact: exact, openExact: openExact, clearFor: clearFor, dictate: dictate,
+    perm: perm, request: request, schedule: schedule, test: test, diag: diag, exact: exact, openExact: openExact, openAutostart: openAutostart, clearFor: clearFor, dictate: dictate,
     onAction: function (fn) { handler = fn; var q = pending; pending = []; q.forEach(fn); }
   };
   setup();
