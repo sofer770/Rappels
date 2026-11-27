@@ -711,26 +711,45 @@
     if (Notification.permission === 'granted' && dev && dev.push) return dev.serverPush === false ? 'no-server' : 'on';
     return 'off';
   }
+  function withTimeout(p, ms, msg) {
+    return Promise.race([p, new Promise(function (_, rej) { setTimeout(function () { rej(new Error(msg)); }, ms); })]);
+  }
   async function enablePush(silent) {
     if (!pushSupported()) { if (isIOS() && !standalone()) showInstall(); else toast('הדפדפן הזה לא תומך בהתראות. מומלץ Chrome, Edge או Safari מעודכן.'); return false; }
-    var perm = await Notification.requestPermission();
-    if (perm !== 'granted') { toast('ההתראות נחסמו. אפשר לאשר אותן בהגדרות האתר בדפדפן.'); refreshBanner(); return false; }
-    var reg = await navigator.serviceWorker.ready, dev = await DB.device();
+    if (Notification.permission === 'denied') { showBlockedHelp(); refreshBanner(); return false; }
     try {
-      var k = await fetch(DB.api('key')).then(function (r) { if (!r.ok) throw new Error('key'); return r.json(); });
+      // חייב להיקרא מיד בלחיצה (בלי המתנה לפני), אחרת Safari מתעלם
+      var permP = Notification.permission === 'granted' ? Promise.resolve('granted') : Notification.requestPermission();
+      if (Notification.permission === 'default') toast('נא לאשר התראות בחלון שקפץ. אם לא קפץ חלון, לחצו על סמל הפעמון או המנעול בשורת הכתובת.');
+      var perm = await withTimeout(Promise.resolve(permP), 90000, 'perm');
+      if (perm !== 'granted') { toast('ההתראות לא אושרו. אפשר לאשר אותן בהגדרות האתר בדפדפן (סמל המנעול ליד הכתובת).'); refreshBanner(); return false; }
+      if (!silent) toast('מפעיל התראות...');
+      var reg = await withTimeout(navigator.serviceWorker.ready, 10000, 'sw'), dev = await DB.device();
+    } catch (e) {
+      toast(e && e.message === 'sw' ? 'רכיב הרקע של האפליקציה עוד לא נטען. רעננו את הדף ונסו שוב.' : e && e.message === 'perm' ? 'לא התקבל אישור להתראות.' : 'שגיאה בהפעלת התראות: ' + (e && e.message || e));
+      return false;
+    }
+    try {
+      var k = await withTimeout(fetch(DB.api('key')).then(function (r) { if (!r.ok) throw new Error('key'); return r.json(); }), 15000, 'key');
       var sub = await reg.pushManager.getSubscription();
       if (sub && dev.key && dev.key !== k.key) { await sub.unsubscribe(); sub = null; }
-      if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(k.key) });
-      dev.push = true; dev.key = k.key; dev.subSent = false; await DB.setMeta('device', dev);
+      if (!sub) sub = await withTimeout(reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(k.key) }), 20000, 'subscribe');
+      dev.push = true; dev.key = k.key; dev.subSent = false; dev.serverPush = true; await DB.setMeta('device', dev);
       var res = await DB.sync({ sub: true });
       if (res && res.ok) { pushActive = true; if (!silent) toast('ההתראות הופעלו ✓ הן יקפצו גם כשהאפליקציה סגורה'); }
-      else { if (!silent) toast('ההתראות הופעלו, אבל השרת לא ענה. ננסה שוב אוטומטית.'); }
+      else { if (!silent) toast('ההתראות הופעלו, אבל השרת לא ענה (' + esc(res && (res.error || '') || '') + '). ננסה שוב אוטומטית.'); }
     } catch (e) {
-      dev.push = true; dev.serverPush = false; await DB.setMeta('device', dev);
-      if (!silent) toast('ההתראות יפעלו כשהאפליקציה פתוחה. שרת ההתראות עדיין לא זמין מכאן.');
+      dev.push = true; dev.serverPush = false; dev.lastError = String(e && e.message || e); await DB.setMeta('device', dev);
+      toast('לא הצלחתי להתחבר לשרת ההתראות (' + dev.lastError + '). ההתראות יפעלו בינתיים כשהאפליקציה פתוחה.');
     }
     refreshBanner();
     return true;
+  }
+  function showBlockedHelp() {
+    var h = isIOS() ? '<ol class="steps"><li>פותחים את <b>הגדרות</b> באייפון.</li><li>גוללים ל<b>התראות</b> ובוחרים <b>תזכורות</b>.</li><li>מפעילים <b>אפשר התראות</b>.</li></ol>'
+      : '<ol class="steps"><li>לוחצים על סמל <b>המנעול</b> (או סמל ההגדרות) משמאל לכתובת האתר בשורת הכתובת.</li><li>ליד <b>התראות</b> בוחרים <b>אפשר</b>.</li><li>מרעננים את הדף ולוחצים שוב על הבדיקה.</li></ol><p class="small">באפליקציה מותקנת במחשב: תפריט ⋮ בחלון האפליקציה ← פרטי האפליקציה / הגדרות האתר ← התראות ← אפשר.</p>';
+    var s = openSheet('<h2><span class="grow">' + ic('bell') + ' ההתראות חסומות</span><button class="icon-btn" data-x="close">' + ic('x') + '</button></h2><div class="card"><p>הדפדפן חוסם התראות מהאפליקציה, ולכן היא לא יכולה להקפיץ תזכורות. כך מאשרים:</p>' + h + '</div>');
+    s.addEventListener('click', function (e) { if (e.target.closest('[data-x="close"]')) closeSheet(); });
   }
   async function refreshBanner() {
     var st = await pushState(), b = $('#notif-banner');
@@ -738,9 +757,10 @@
     var msg = { off: 'כדי שהתזכורות יקפצו גם כשהאפליקציה סגורה, צריך להפעיל התראות.', 'ios-install': 'באייפון ההתראות עובדות רק אחרי התקנה למסך הבית.', denied: 'ההתראות חסומות בדפדפן. כדי לקבל תזכורות כשהאפליקציה סגורה, אשרו התראות בהגדרות האתר.' }[st];
     if (!msg) { b.hidden = true; return; }
     b.hidden = false;
-    b.innerHTML = '<span style="color:var(--accent)">' + ic('bell') + '</span><div class="grow">' + msg + '</div>' + (st === 'off' ? '<button class="btn primary" id="b-enable">הפעלה</button>' : st === 'ios-install' ? '<button class="btn primary" id="b-ios">איך מתקינים?</button>' : '');
+    b.innerHTML = '<span style="color:var(--accent)">' + ic('bell') + '</span><div class="grow">' + msg + '</div>' + (st === 'off' ? '<button class="btn primary" id="b-enable">הפעלה</button>' : st === 'ios-install' ? '<button class="btn primary" id="b-ios">איך מתקינים?</button>' : st === 'denied' ? '<button class="btn primary" id="b-den">איך מאשרים?</button>' : '');
     var en = $('#b-enable'); if (en) en.onclick = function () { enablePush(); };
     var io = $('#b-ios'); if (io) io.onclick = showInstall;
+    var dn = $('#b-den'); if (dn) dn.onclick = showBlockedHelp;
   }
   var askedPush = false;
   function maybeAskPush() {
@@ -794,7 +814,7 @@
     var h = '<h2><span class="grow">' + ic('gear') + ' הגדרות</span><button class="icon-btn" data-x="close">' + ic('x') + '</button></h2>';
     h += '<div class="card"><h3>' + ic('bell') + ' התראות</h3><p>' + pushTxt + '</p>' + (dev && dev.lastSync ? '<p class="small">סנכרון אחרון עם השרת: ' + esc(whenLabel(dev.lastSync)) + ' · ' + (dev.lastJobs || 0) + ' התראות מתוזמנות</p>' : '') +
       '<div class="row" style="flex-wrap:wrap">' + (ps !== 'on' ? '<button class="btn primary" data-s="enable">הפעלת התראות</button>' : '') + '<button class="btn" data-s="test">בדיקה עכשיו</button><button class="btn" data-s="test30">בדיקה בעוד 30 שניות</button></div>' +
-      '<p class="small">בבדיקה בעוד 30 שניות אפשר לסגור את האפליקציה לגמרי ולראות שההתראה קופצת.</p></div>';
+      '<p class="small">בבדיקה בעוד 30 שניות אפשר לסגור את האפליקציה לגמרי ולראות שההתראה קופצת.</p><p class="small" id="diag">בודק מצב...</p></div>';
     h += '<div class="card"><h3>' + ic('install') + ' התקנה</h3>' + (standalone() ? '<p>✅ האפליקציה מותקנת במכשיר הזה.</p>' : '<button class="btn primary" data-s="install">' + ic('install') + ' התקנת האפליקציה</button>') + '</div>';
     h += '<div class="card"><h3>🎵 צליל ברירת מחדל</h3><div class="sounds">' + SND.list.map(function (s) { return '<button class="snd' + (st.sound === s.id ? ' on' : '') + '" data-snd="' + s.id + '"><span class="play">' + ic('play') + '</span>' + s.name + '</button>'; }).join('') + '</div>' +
       '<div class="field" style="margin-top:12px"><label for="s-vol">עוצמה</label><input type="range" id="s-vol" min="0.1" max="1" step="0.05" value="' + st.volume + '" style="width:100%;accent-color:var(--accent)"></div>' +
@@ -813,12 +833,13 @@
       (st.lastBackup ? '<p class="small">גיבוי אחרון: ' + esc(whenLabel(st.lastBackup)) + '</p>' : '') + '</div>';
     h += '<div class="card"><h3>ℹ️ אודות</h3><p class="small">תזכורות · גרסה 2.0 · בלי פרסומות. ' + state.list.length + ' פריטים שמורים.</p><p class="small">מה כדאי לדעת: כדי שתזכורת תקפוץ כשהאפליקציה סגורה צריך אינטרנט במכשיר והתראות מאושרות. באייפון זה עובד רק מהאפליקציה המותקנת. במחשב, הדפדפן צריך לרוץ ברקע. מצב ״נא לא להפריע״ ומצב חיסכון בסוללה עלולים לעכב התראות.</p><button class="btn danger" data-s="reset">מחיקת כל הנתונים</button></div>';
     var s = openSheet(h);
+    diagnostics().then(function (t) { var d = $('#diag', s); if (d) d.textContent = t; });
     s.addEventListener('click', async function (e) {
       if (e.target.closest('[data-x="close"]')) return closeSheet();
       var snd = e.target.closest('[data-snd]');
       if (snd) { SND.unlock(); st.sound = snd.dataset.snd; SND.stop(); SND.play(st.sound, st.volume); $$('.snd', s).forEach(function (b) { b.classList.toggle('on', b === snd); }); saveSettings(); changed(); return; }
-      var th = e.target.closest('[data-theme]'); if (th) { st.theme = th.dataset.theme; applyTheme(); saveSettings(); $$('[data-theme]', s).forEach(function (b) { b.classList.toggle('on', b === th); }); return; }
-      var ac = e.target.closest('[data-acc]'); if (ac) { st.accent = ac.dataset.acc; applyTheme(); saveSettings(); $$('[data-acc]', s).forEach(function (b) { b.classList.toggle('on', b === ac); }); return; }
+      var th = e.target.closest('button[data-theme]'); if (th) { st.theme = th.dataset.theme; applyTheme(); saveSettings(); $$('[data-theme]', s).forEach(function (b) { b.classList.toggle('on', b === th); }); return; }
+      var ac = e.target.closest('button[data-acc]'); if (ac) { st.accent = ac.dataset.acc; applyTheme(); saveSettings(); $$('[data-acc]', s).forEach(function (b) { b.classList.toggle('on', b === ac); }); return; }
       var b = e.target.closest('[data-s]'); if (!b) return;
       var a = b.dataset.s;
       if (a === 'enable') { await enablePush(); closeSheet(); openSettings(); }
@@ -855,16 +876,31 @@
     });
   }
   async function testPush(delay) {
-    var ps = await pushState();
-    if (ps !== 'on') {
-      var ok = await enablePush(true); if (!ok) return;
-      ps = await pushState();
-    }
-    if (ps !== 'on') { toast('שרת ההתראות לא זמין, מציג בדיקה מקומית'); showAlarm({ rid: 'test', t: Date.now(), title: 'בדיקת התראה ✓', body: '', kind: 'test' }); return; }
-    var dev = await DB.meta('device');
-    var r = await fetch(DB.api('test'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: dev.id, secret: dev.secret, delay: delay }) }).then(function (x) { return x.json(); }).catch(function () { return {}; });
-    if (r.ok) toast(delay ? 'בעוד 30 שניות תקפוץ התראה. אפשר לסגור את האפליקציה עכשיו.' : 'נשלחה התראת בדיקה');
-    else toast('הבדיקה נכשלה. נסו להפעיל את ההתראות מחדש.');
+    try {
+      if (!pushSupported() || Notification.permission !== 'granted') { var ok = await enablePush(true); if (!ok) return; }
+      toast('שולח בדיקה...');
+      var ps = await pushState();
+      if (ps !== 'on') { var ok2 = await enablePush(true); if (!ok2) return; ps = await pushState(); }
+      if (ps !== 'on') { var dv = await DB.meta('device'); toast('לא הצלחתי לרשום את המכשיר להתראות' + (dv && dv.lastError ? ' (' + dv.lastError + ')' : '') + '. מציג בדיקה מקומית.'); showAlarm({ rid: 'test', t: Date.now(), title: 'בדיקת התראה ✓', body: '', kind: 'test' }); return; }
+      var dev = await DB.meta('device');
+      var send = function () { return fetch(DB.api('test'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: dev.id, secret: dev.secret, delay: delay }) }).then(function (x) { return x.json(); }); };
+      var r = await withTimeout(send(), 15000, 'timeout').catch(function (e) { return { error: e.message }; });
+      if (r.error === 'missing' || r.error === 'forbidden') { await DB.sync({ sub: true }); r = await withTimeout(send(), 15000, 'timeout').catch(function (e) { return { error: e.message }; }); }
+      if (r.ok) toast(delay ? 'בעוד 30 שניות תקפוץ התראה. אפשר לסגור את האפליקציה עכשיו.' : 'נשלחה התראת בדיקה');
+      else toast('הבדיקה נכשלה (' + (r.error || 'שגיאה') + '). נסו לרענן ולהפעיל את ההתראות מחדש.');
+    } catch (e) { toast('הבדיקה נכשלה: ' + (e && e.message || e)); }
+  }
+  async function diagnostics() {
+    var out = [];
+    out.push('התראות בדפדפן: ' + ('Notification' in window ? Notification.permission : 'לא נתמך'));
+    var reg = null; try { reg = navigator.serviceWorker && await withTimeout(navigator.serviceWorker.getRegistration(), 3000, 't'); } catch (e) {}
+    out.push('רכיב רקע: ' + (reg && reg.active ? 'פעיל' : reg ? 'נטען' : 'לא רשום'));
+    var sub = null; try { sub = reg && reg.pushManager && await reg.pushManager.getSubscription(); } catch (e) {}
+    out.push('מנוי להתראות: ' + (sub ? 'יש' : 'אין'));
+    try { var h = await withTimeout(fetch(DB.api('health')).then(function (r) { return r.json(); }), 8000, 't'); out.push('שרת: ' + (h.ok ? 'מחובר' : 'שגיאה')); } catch (e) { out.push('שרת: לא זמין'); }
+    var dev = await DB.meta('device'); if (dev && dev.lastError) out.push('שגיאה אחרונה: ' + dev.lastError);
+    out.push('מותקנת: ' + (standalone() ? 'כן' : 'לא') + ' · ' + (isIOS() ? 'iOS' : /android/i.test(navigator.userAgent) ? 'Android' : 'מחשב'));
+    return out.join(' · ');
   }
   function download(name, text, type) {
     var blob = new Blob([text], { type: type }), file = null;
