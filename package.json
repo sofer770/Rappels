@@ -8,7 +8,15 @@
     "deploy": "wrangler deploy"
   },
   "devDependencies": {
+    "@capacitor/assets": "4.0.0",
+    "@capacitor/cli": "8.6.3",
     "http_ece": "1.2.1",
     "wrangler": "4.168.0"
+  },
+  "dependencies": {
+    "@capacitor-community/speech-recognition": "7.0.1",
+    "@capacitor/android": "8.6.3",
+    "@capacitor/core": "8.6.3",
+    "@capacitor/local-notifications": "8.3.1"
   }
 }
