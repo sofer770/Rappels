@@ -35,7 +35,7 @@ export default {
 
 const ID_RE = /^[A-Za-z0-9_-]{16,64}$/;
 const MAX_JOBS = 400;
-const SERVER_VERSION = '2026-11-27b'; // מאפשר לבדוק שהשרת באמת עודכן
+const SERVER_VERSION = '2026-11-28a'; // מאפשר לבדוק שהשרת באמת עודכן
 
 export class Hub {
   constructor(state, env) {
@@ -47,6 +47,11 @@ export class Hub {
     this.sql.exec(`CREATE TABLE IF NOT EXISTS jobs (device TEXT, t INTEGER, payload TEXT)`);
     this.sql.exec(`CREATE INDEX IF NOT EXISTS jobs_t ON jobs(t)`);
     this.sql.exec(`CREATE INDEX IF NOT EXISTS jobs_d ON jobs(device)`);
+    // סנכרון בין מכשירים: קבוצה = כמה מכשירים של אותו אדם, מחוברים בקוד
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS groups (gid TEXT PRIMARY KEY, key TEXT, created INTEGER, seen INTEGER)`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS codes (code TEXT PRIMARY KEY, gid TEXT, exp INTEGER)`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS items (gid TEXT, id TEXT, data TEXT, updated INTEGER, deleted INTEGER, seq INTEGER, PRIMARY KEY (gid, id))`);
+    this.sql.exec(`CREATE INDEX IF NOT EXISTS items_s ON items(gid, seq)`);
   }
 
   kvGet(k) {
@@ -75,6 +80,74 @@ export class Hub {
     return rows[0].secret === secret ? 'ok' : 'forbidden';
   }
 
+  // ---------- סנכרון תזכורות בין מכשירים ----------
+  groupAuth(gid, key) {
+    if (!ID_RE.test(gid || '') || !ID_RE.test(key || '')) return false;
+    const r = this.sql.exec('SELECT key FROM groups WHERE gid = ?', gid).toArray();
+    if (!r.length || r[0].key !== key) return false;
+    this.sql.exec('UPDATE groups SET seen = ? WHERE gid = ?', Date.now(), gid);
+    return true;
+  }
+  newCode(gid) {
+    const now = Date.now();
+    this.sql.exec('DELETE FROM codes WHERE exp < ?', now);
+    for (let i = 0; i < 20; i++) {
+      const a = new Uint32Array(1); crypto.getRandomValues(a);
+      const code = String(a[0] % 1000000).padStart(6, '0');
+      if (this.sql.exec('SELECT 1 FROM codes WHERE code = ?', code).toArray().length) continue;
+      this.sql.exec('INSERT INTO codes (code, gid, exp) VALUES (?, ?, ?)', code, gid, now + 15 * 60000);
+      return code;
+    }
+    throw new Error('no code');
+  }
+  group(op, b) {
+    const now = Date.now();
+    if (op === 'create') {
+      if (!ID_RE.test(b.gid || '') || !ID_RE.test(b.key || '')) return json({ error: 'bad' }, 400);
+      const ex = this.sql.exec('SELECT key FROM groups WHERE gid = ?', b.gid).toArray();
+      if (ex.length && ex[0].key !== b.key) return json({ error: 'forbidden' }, 403);
+      if (!ex.length) this.sql.exec('INSERT INTO groups (gid, key, created, seen) VALUES (?, ?, ?, ?)', b.gid, b.key, now, now);
+      return json({ ok: true, code: this.newCode(b.gid) });
+    }
+    if (op === 'join') {
+      const code = String(b.code || '').replace(/\D/g, '');
+      // הגנה מניחוש: לכל היותר 30 ניסיונות כושלים בדקה לכל השרת
+      const fails = JSON.parse(this.kvGet('joinFails') || '[]').filter((t) => t > now - 60000);
+      if (fails.length >= 30) return json({ error: 'busy' }, 429);
+      const r = this.sql.exec('SELECT gid FROM codes WHERE code = ? AND exp > ?', code, now).toArray();
+      if (!r.length) { fails.push(now); this.kvSet('joinFails', JSON.stringify(fails)); return json({ error: 'code' }, 404); }
+      this.sql.exec('DELETE FROM codes WHERE code = ?', code);
+      const g = this.sql.exec('SELECT gid, key FROM groups WHERE gid = ?', r[0].gid).one();
+      return json({ ok: true, gid: g.gid, key: g.key });
+    }
+    if (!this.groupAuth(b.gid, b.key)) return json({ error: 'forbidden' }, 403);
+    if (op === 'code') return json({ ok: true, code: this.newCode(b.gid) });
+    if (op === 'push') {
+      let n = 0, seq = Number(this.kvGet('seq') || 0);
+      for (const it of (Array.isArray(b.items) ? b.items : []).slice(0, 500)) {
+        if (!it || typeof it.id !== 'string' || it.id.length > 80) continue;
+        const up = Math.min(Number(it.updated) || 0, now + 60000);
+        const cur = this.sql.exec('SELECT updated FROM items WHERE gid = ? AND id = ?', b.gid, it.id).toArray();
+        if (cur.length && cur[0].updated >= up) continue;
+        const data = it.deleted ? null : JSON.stringify(it.data || null);
+        if (data && data.length > 350000) continue;
+        this.sql.exec('INSERT OR REPLACE INTO items (gid, id, data, updated, deleted, seq) VALUES (?, ?, ?, ?, ?, ?)', b.gid, it.id, data, up, it.deleted ? 1 : 0, ++seq);
+        n++;
+      }
+      this.kvSet('seq', String(seq));
+      return json({ ok: true, saved: n, seq });
+    }
+    if (op === 'pull') {
+      const since = Number(b.since) || 0;
+      const rows = this.sql.exec('SELECT id, data, updated, deleted, seq FROM items WHERE gid = ? AND seq > ? ORDER BY seq LIMIT 300', b.gid, since).toArray();
+      return json({ ok: true, items: rows.map((r) => ({ id: r.id, data: r.data ? JSON.parse(r.data) : null, updated: r.updated, deleted: !!r.deleted })), more: rows.length === 300, seq: rows.length ? rows[rows.length - 1].seq : since });
+    }
+    if (op === 'devices') {
+      return json({ ok: true, count: this.sql.exec('SELECT COUNT(*) AS c FROM items WHERE gid = ?', b.gid).one().c });
+    }
+    return json({ error: 'not_found' }, 404);
+  }
+
   async fetch(req) {
     const url = new URL(req.url);
     const path = url.pathname.replace(/^\/api\//, '');
@@ -94,6 +167,8 @@ export class Hub {
       const text = await req.text();
       if (text.length > 400000) return json({ error: 'too_big' }, 413);
       const body = JSON.parse(text || '{}');
+
+      if (path.startsWith('group/')) return this.group(path.slice(6), body);
 
       if (path === 'sync') {
         const a = this.auth(body.id, body.secret, true);
