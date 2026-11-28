@@ -7,7 +7,6 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(TzDevicePlugin.class);
-        registerPlugin(TzGeoPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

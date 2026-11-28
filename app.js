@@ -798,10 +798,6 @@
       { id: 'exact', ok: (await NAT.exact()) === 'granted', title: 'לאשר שעונים מעוררים', why: 'כדי שהתזכורת תקפוץ בדקה המדויקת. מדליקים את המתג וחוזרים.' },
       { id: 'battery', ok: d.battery !== false, title: 'לאשר פעולה ברקע', why: 'כדי שחיסכון בסוללה לא יעצור את התזכורות. בוחרים "אישור" או "אין הגבלות".' }
     ];
-    if (NAT.geo && state.list.some(function (r) { return S.isLoc(r) && !r.done; })) {
-      var gs = {}; try { gs = await NAT.geo.status(); } catch (e) {}
-      st.push({ id: 'geo', ok: !!(gs.fine && gs.background), title: 'לאשר מיקום ברקע', why: 'בשביל התזכורות לפי מקום. בחלון שנפתח בוחרים "לאפשר כל הזמן".' });
-    }
     if (d.aggressive) st.push({ id: 'auto', ok: !!state.settings.autostartDone, title: 'להדליק הפעלה אוטומטית', why: 'בטלפון הזה זה הכרחי, אחרת התזכורות נעצרות כשסוגרים את האפליקציה. במסך שנפתח מחפשים "תזכורות" (הפעמון הכחול) ומדליקים.' });
     return st;
   }
@@ -831,7 +827,6 @@
       if (w === 'notif') { await NAT.request().catch(function () {}); DB.sync(); refreshBanner(); }
       if (w === 'exact') NAT.openExact();
       if (w === 'battery') NAT.requestBattery();
-      if (w === 'geo') { try { var g0 = await NAT.geo.status(); if (!g0.fine) await NAT.geo.requestLocation(); await NAT.geo.requestBackground(); } catch (e2) {} }
       if (w === 'auto') { state.settings.autostartDone = true; await saveSettings(); NAT.openAutostart(); }
       if (w === 'test') { await NAT.test(5); toast('בעוד 5 שניות תקפוץ התראת בדיקה'); return; }
       setTimeout(function () { draw(); }, 400);
