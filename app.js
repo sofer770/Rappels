@@ -896,6 +896,23 @@
   }
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
 
+  var g0Sync = window.TZSync || null;
+  async function showSyncCode() {
+    var w = openSheet('<h2><span class="grow">📱 חיבור מכשיר</span><button class="icon-btn" data-x="close">' + ic('x') + '</button></h2><div class="card" style="text-align:center"><p>במכשיר השני: הגדרות ← סנכרון בין מכשירים ← <b>יש לי קוד</b>, ומקלידים:</p><div id="sync-code" style="font-size:40px;font-weight:800;letter-spacing:8px;direction:ltr;margin:14px 0">...</div><p class="small">הקוד תקף לרבע שעה ולחיבור אחד.</p></div>');
+    w.addEventListener('click', function (e) { if (e.target.closest('[data-x="close"]')) closeSheet(); });
+    try { var c = await g0Sync.create(); $('#sync-code', w).textContent = c.slice(0, 3) + ' ' + c.slice(3); }
+    catch (e) { $('#sync-code', w).textContent = '—'; toast('לא הצלחתי ליצור קוד. בדקו שיש אינטרנט ונסו שוב.'); }
+  }
+  async function joinSync() {
+    var code = prompt('הקוד שמופיע במכשיר השני (6 ספרות):');
+    if (!code) return;
+    toast('מתחבר...');
+    try {
+      var r = await g0Sync.join(code);
+      if (r && r.error) throw new Error(r.error);
+      closeSheet(); toast('מחובר ✓ התזכורות מסונכרנות'); openSettings();
+    } catch (e) { toast(e && e.code === 'code' ? 'הקוד לא נכון או שפג תוקפו. בקשו קוד חדש במכשיר השני.' : 'החיבור נכשל. בדקו שיש אינטרנט ונסו שוב.'); }
+  }
   async function openSettings() {
     var st = state.settings, ps = await pushState(), dev = await DB.meta('device');
     var pushTxt = { on: NAT ? '✅ פעילות. התזכורות מתוזמנות בטלפון עצמו ויקפצו גם כשהאפליקציה סגורה, גם בלי אינטרנט.' : '✅ פעילות. התזכורות יקפצו גם כשהאפליקציה סגורה.', off: 'כבויות.', denied: '⛔ חסומות בדפדפן. צריך לאשר בהגדרות האתר (סמל המנעול ליד הכתובת).', 'ios-install': 'באייפון צריך קודם להתקין את האפליקציה למסך הבית.', unsupported: 'הדפדפן הזה לא תומך בהתראות.', 'no-server': '⚠️ פעילות רק כשהאפליקציה פתוחה (שרת ההתראות לא זמין).' }[ps];
@@ -920,6 +937,10 @@
       '<label class="switch"><span>טקסט גדול</span><input type="checkbox" id="s-size"' + (st.size === 'large' ? ' checked' : '') + '></label>' +
       '<label class="switch"><span>הצגת תאריך עברי וחגים</span><input type="checkbox" id="s-heb"' + (st.showHeb ? ' checked' : '') + '></label></div>';
     h += '<div class="card"><h3>' + ic('lock') + ' נעילה בקוד</h3>' + (st.pinHash ? '<p>✅ האפליקציה נעולה בקוד.</p><div class="row"><div class="field"><label for="s-lockafter">לנעול אחרי</label><select class="input" id="s-lockafter">' + opts([[0, 'מיד'], [1, 'דקה'], [5, '5 דקות'], [15, 'רבע שעה'], [60, 'שעה']], st.lockAfter) + '</select></div></div><div class="row"><button class="btn" data-s="pin">שינוי קוד</button><button class="btn danger" data-s="nopin">ביטול נעילה</button></div>' : '<p class="small">קוד של 4 עד 8 ספרות שיידרש בכל פתיחה.</p><button class="btn" data-s="pin">הגדרת קוד</button>') + '</div>';
+    var sy = g0Sync ? await g0Sync.state() : null;
+    if (sy) h += '<div class="card"><h3>📱 סנכרון בין מכשירים</h3>' + (sy.on
+      ? '<p>✅ מחובר. תזכורות שמוסיפים כאן מופיעות גם במכשירים המחוברים.' + (sy.lastSync ? ' <span class="small">(עדכון אחרון: ' + esc(whenLabel(sy.lastSync)) + ')</span>' : '') + '</p><div class="row" style="flex-wrap:wrap"><button class="btn primary" data-s="sync-add">חיבור מכשיר נוסף</button><button class="btn" data-s="sync-now">סנכרון עכשיו</button><button class="btn danger" data-s="sync-off">ניתוק</button></div>'
+      : '<p class="small">כדי לראות את אותן תזכורות במחשב ובטלפון: לוחצים כאן "חיבור מכשיר" ומקבלים קוד, ובמכשיר השני לוחצים "יש לי קוד" ומקלידים אותו.</p><div class="row" style="flex-wrap:wrap"><button class="btn primary" data-s="sync-add">חיבור מכשיר</button><button class="btn" data-s="sync-join">יש לי קוד</button></div>') + '</div>';
     h += '<div class="card"><h3>' + ic('download') + ' גיבוי והעברה למכשיר חדש</h3><p class="small">התזכורות נשמרות במכשיר הזה. כדי להעביר למכשיר אחר: שומרים קובץ גיבוי, שולחים אותו לעצמכם (מייל, וואטסאפ, Drive) ופותחים אותו בשחזור במכשיר החדש.</p>' +
       '<div class="row" style="flex-wrap:wrap"><button class="btn primary" data-s="export">' + ic('download') + ' שמירת גיבוי</button><label class="btn">' + ic('upload') + ' שחזור מגיבוי<input type="file" accept=".json,application/json" id="s-import" hidden></label><button class="btn" data-s="ics">' + ic('cal') + ' ייצוא ליומן (Google / Outlook)</button></div>' +
       (st.lastBackup ? '<p class="small">גיבוי אחרון: ' + esc(whenLabel(st.lastBackup)) + '</p>' : '') + '</div>';
@@ -945,6 +966,10 @@
       if (a === 'autostart' && NAT) NAT.openAutostart();
       if (a === 'setup' && NAT) openSetup(false);
       if (a === 'install') { closeSheet(); doInstall(); }
+      if (a === 'sync-add') showSyncCode();
+      if (a === 'sync-join') joinSync();
+      if (a === 'sync-now') { toast('מסנכרן...'); var rs = await g0Sync.run(); toast(rs && rs.error ? 'הסנכרון נכשל. בדקו שיש אינטרנט.' : 'מסונכרן ✓'); }
+      if (a === 'sync-off') { if (!confirm('לנתק את המכשיר הזה מהסנכרון? התזכורות יישארו בו.')) return; await g0Sync.leave(); closeSheet(); openSettings(); toast('המכשיר נותק מהסנכרון'); }
       if (a === 'export') exportBackup();
       if (a === 'ics') exportICS();
       if (a === 'pin') { closeSheet(); setPin(); }
@@ -954,7 +979,7 @@
         if (!confirm('בטוח? אי אפשר לבטל.')) return;
         var dev2 = await DB.meta('device');
         if (dev2 && dev2.id) fetch(DB.api('forget'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: dev2.id, secret: dev2.secret }) }).catch(function () {});
-        await DB.clear(); await DB.setMeta('settings', DEFAULTS); await DB.setMeta('device', null);
+        await DB.clear(); await DB.setMeta('settings', DEFAULTS); await DB.setMeta('device', null); await DB.setMeta('group', null);
         location.reload();
       }
     });
@@ -1203,6 +1228,7 @@
       else if (a.action === 'snooze') { S.snooze(r, Date.now(), state.settings.snoozeMin || 10); save(r); toast('נדחה ל-' + whenLabel(r.snoozeUntil)); }
       else { fired[r.id + ':' + d.t] = 1; if (!alarmOpen) showAlarm({ rid: r.id, t: d.t || Date.now(), occ: d.occ || d.t, title: S.titleFor(r, d.occ || d.t || Date.now()), kind: d.kind || 'main' }); }
     });
+    window.addEventListener('tz:remote-changed', function () { DB.all().then(function (l) { state.list = l; rebuildJobs(); render(); DB.sync(); }); });
     refreshBanner();
     if (NAT) setTimeout(function () { if (!locked) openSetup(true); }, 900);
     var q = new URLSearchParams(location.search);
