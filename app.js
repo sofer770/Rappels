@@ -129,6 +129,7 @@
     else if (st.state === 'done') meta.push('<span>' + ic('check') + ' בוצע ' + esc(whenLabel(st.at)) + '</span>');
     else if (st.state === 'paused') meta.push('<span>' + ic('pause') + ' מושהה</span>');
     else if (st.state === 'ended') meta.push('<span>הסתיים</span>');
+    else if (st.state === 'location') meta.push('<span>📍 ' + (r.loc.on === 'exit' ? 'ביציאה מ' : 'בהגעה ל') + esc(r.loc.name || 'מקום') + '</span>');
     else if (st.at) meta.push('<span>' + ic('clock') + ' ' + esc(whenLabel(st.at)) + '</span>');
     if (r.type === 'birthday' && st.at && st.state !== 'done') {
       var age = r.birthYear ? new Date(st.at).getFullYear() - r.birthYear : null;
@@ -206,8 +207,9 @@
     var t = all.filter(function (x) { return x.st.state !== 'overdue' && x.st.at && dayDiff(x.st.at) === 0 && x.st.state !== 'paused'; });
     var u = all.filter(function (x) { return x.st.state !== 'overdue' && x.st.at && dayDiff(x.st.at) > 0 && x.st.state !== 'paused'; });
     var rec = all.filter(function (x) { return S.isRecurring(x.r) && x.st.state !== 'paused'; });
-    var p = all.filter(function (x) { return x.st.state === 'paused' || x.st.state === 'ended' || !x.st.at; });
-    h += section('באיחור', o, 'red') + section('היום', t) + section('בהמשך', u) + section('מושהות והסתיימו', p);
+    var lc = all.filter(function (x) { return x.st.state === 'location'; });
+    var p = all.filter(function (x) { return x.st.state === 'paused' || x.st.state === 'ended' || (!x.st.at && x.st.state !== 'location'); });
+    h += section('באיחור', o, 'red') + section('היום', t) + section('בהמשך', u) + section('📍 לפי מקום', lc) + section('מושהות והסתיימו', p);
     if (!all.length) h += '<div class="empty"><div class="big">📝</div>' + (state.q ? 'לא נמצאו תזכורות' : 'אין תזכורות פעילות') + '</div>';
     else if (rec.length) h += '<div class="small" style="text-align:center;margin-top:10px">' + rec.length + ' תזכורות חוזרות פעילות</div>';
     return h;
@@ -796,6 +798,10 @@
       { id: 'exact', ok: (await NAT.exact()) === 'granted', title: 'לאשר שעונים מעוררים', why: 'כדי שהתזכורת תקפוץ בדקה המדויקת. מדליקים את המתג וחוזרים.' },
       { id: 'battery', ok: d.battery !== false, title: 'לאשר פעולה ברקע', why: 'כדי שחיסכון בסוללה לא יעצור את התזכורות. בוחרים "אישור" או "אין הגבלות".' }
     ];
+    if (NAT.geo && state.list.some(function (r) { return S.isLoc(r) && !r.done; })) {
+      var gs = {}; try { gs = await NAT.geo.status(); } catch (e) {}
+      st.push({ id: 'geo', ok: !!(gs.fine && gs.background), title: 'לאשר מיקום ברקע', why: 'בשביל התזכורות לפי מקום. בחלון שנפתח בוחרים "לאפשר כל הזמן".' });
+    }
     if (d.aggressive) st.push({ id: 'auto', ok: !!state.settings.autostartDone, title: 'להדליק הפעלה אוטומטית', why: 'בטלפון הזה זה הכרחי, אחרת התזכורות נעצרות כשסוגרים את האפליקציה. במסך שנפתח מחפשים "תזכורות" (הפעמון הכחול) ומדליקים.' });
     return st;
   }
@@ -825,6 +831,7 @@
       if (w === 'notif') { await NAT.request().catch(function () {}); DB.sync(); refreshBanner(); }
       if (w === 'exact') NAT.openExact();
       if (w === 'battery') NAT.requestBattery();
+      if (w === 'geo') { try { var g0 = await NAT.geo.status(); if (!g0.fine) await NAT.geo.requestLocation(); await NAT.geo.requestBackground(); } catch (e2) {} }
       if (w === 'auto') { state.settings.autostartDone = true; await saveSettings(); NAT.openAutostart(); }
       if (w === 'test') { await NAT.test(5); toast('בעוד 5 שניות תקפוץ התראת בדיקה'); return; }
       setTimeout(function () { draw(); }, 400);
@@ -898,10 +905,14 @@
     var st = state.settings, ps = await pushState(), dev = await DB.meta('device');
     var pushTxt = { on: NAT ? '✅ פעילות. התזכורות מתוזמנות בטלפון עצמו ויקפצו גם כשהאפליקציה סגורה, גם בלי אינטרנט.' : '✅ פעילות. התזכורות יקפצו גם כשהאפליקציה סגורה.', off: 'כבויות.', denied: '⛔ חסומות בדפדפן. צריך לאשר בהגדרות האתר (סמל המנעול ליד הכתובת).', 'ios-install': 'באייפון צריך קודם להתקין את האפליקציה למסך הבית.', unsupported: 'הדפדפן הזה לא תומך בהתראות.', 'no-server': '⚠️ פעילות רק כשהאפליקציה פתוחה (שרת ההתראות לא זמין).' }[ps];
     var h = '<h2><span class="grow">' + ic('gear') + ' הגדרות</span><button class="icon-btn" data-x="close">' + ic('x') + '</button></h2>';
-    h += '<div class="card"><h3>' + ic('bell') + ' התראות</h3><p>' + pushTxt + '</p>' + (dev && dev.lastSync ? '<p class="small">' + (NAT ? 'תזמון אחרון בטלפון: ' : 'סנכרון אחרון עם השרת: ') + esc(whenLabel(dev.lastSync)) + ' · ' + (dev.lastJobs || 0) + ' התראות מתוזמנות</p>' : '') +
-      '<div class="row" style="flex-wrap:wrap">' + (ps !== 'on' ? '<button class="btn primary" data-s="enable">הפעלת התראות</button>' : '') + '<button class="btn" data-s="test">בדיקה עכשיו</button><button class="btn" data-s="test30">בדיקה בעוד 30 שניות</button>' + (NAT ? '<button class="btn" data-s="exact">הרשאת שעון מדויק</button><button class="btn" data-s="autostart">הפעלה אוטומטית</button><button class="btn primary" data-s="setup">הגדרה מהירה</button>' : '') + '</div>' +
-      '<p class="small">בבדיקה בעוד 30 שניות אפשר לסגור את האפליקציה לגמרי ולראות שההתראה קופצת.' + (NAT ? ' בשיאומי: לוחצים "הפעלה אוטומטית" ומדליקים את תזכורות, ובפרטי האפליקציה בוחרים בסוללה "אין הגבלות".' : '') + '</p><p class="small" id="diag">בודק מצב...</p></div>';
-    h += '<div class="card"><h3>' + ic('install') + ' התקנה</h3>' + (standalone() ? '<p>✅ האפליקציה מותקנת במכשיר הזה.</p>' : '<button class="btn primary" data-s="install">' + ic('install') + ' התקנת האפליקציה</button>') + '</div>';
+    var ready = ps === 'on', missing = 0;
+    if (NAT) { try { missing = (await setupSteps()).filter(function (x) { return !x.ok; }).length; } catch (e) {} ready = ready && !missing; }
+    h += '<div class="card"><h3>' + ic('bell') + ' התראות</h3>' +
+      (NAT ? '<p>' + (ready ? '✅ הכל מוכן. התזכורות יקפצו בזמן גם כשהאפליקציה סגורה.' : '⚠️ ' + (missing === 1 ? 'חסר אישור אחד' : 'חסרים ' + (missing || 'כמה') + ' אישורים') + ' כדי שהתזכורות יקפצו בזמן.') + '</p>' : '<p>' + pushTxt + '</p>') +
+      '<div class="row" style="flex-wrap:wrap">' +
+      (NAT ? (!ready ? '<button class="btn primary" data-s="setup">השלמת ההגדרה</button>' : '') : (ps !== 'on' ? '<button class="btn primary" data-s="enable">הפעלת התראות</button>' : '')) +
+      '<button class="btn" data-s="test">התראת בדיקה</button></div></div>';
+    if (!NAT && !standalone()) h += '<div class="card"><h3>' + ic('install') + ' התקנה</h3><button class="btn primary" data-s="install">' + ic('install') + ' התקנת האפליקציה</button></div>';
     h += '<div class="card"><h3>🎵 צליל ברירת מחדל</h3><div class="sounds">' + SND.list.map(function (s) { return '<button class="snd' + (st.sound === s.id ? ' on' : '') + '" data-snd="' + s.id + '"><span class="play">' + ic('play') + '</span>' + s.name + '</button>'; }).join('') + '</div>' +
       '<div class="field" style="margin-top:12px"><label for="s-vol">עוצמה</label><input type="range" id="s-vol" min="0.1" max="1" step="0.05" value="' + st.volume + '" style="width:100%;accent-color:var(--accent)"></div>' +
       '<label class="switch"><span>להשמיע שוב ושוב עד שלוחצים (כשהאפליקציה פתוחה)</span><input type="checkbox" id="s-loop"' + (st.loop ? ' checked' : '') + '></label>' +
@@ -917,7 +928,12 @@
     h += '<div class="card"><h3>' + ic('download') + ' גיבוי והעברה למכשיר חדש</h3><p class="small">התזכורות נשמרות במכשיר הזה. כדי להעביר למכשיר אחר: שומרים קובץ גיבוי, שולחים אותו לעצמכם (מייל, וואטסאפ, Drive) ופותחים אותו בשחזור במכשיר החדש.</p>' +
       '<div class="row" style="flex-wrap:wrap"><button class="btn primary" data-s="export">' + ic('download') + ' שמירת גיבוי</button><label class="btn">' + ic('upload') + ' שחזור מגיבוי<input type="file" accept=".json,application/json" id="s-import" hidden></label><button class="btn" data-s="ics">' + ic('cal') + ' ייצוא ליומן (Google / Outlook)</button></div>' +
       (st.lastBackup ? '<p class="small">גיבוי אחרון: ' + esc(whenLabel(st.lastBackup)) + '</p>' : '') + '</div>';
-    h += '<div class="card"><h3>ℹ️ אודות</h3><p class="small" style="line-height:1.7">נוצר ע"י <b>יאיר גלעדי</b><br>"המרכז לבריאות טבעית"<br><a href="tel:0542135831" style="white-space:nowrap;direction:ltr;unicode-bidi:isolate;display:inline-block">054-2135831</a> - <a href="https://el-habriut.co.il" target="_blank" rel="noopener" style="white-space:nowrap;direction:ltr;unicode-bidi:isolate;display:inline-block">https://el-habriut.co.il</a></p><p class="small">תזכורות · גרסה 2.0 · בלי פרסומות. ' + state.list.length + ' פריטים שמורים.</p><p class="small">מה כדאי לדעת: כדי שתזכורת תקפוץ כשהאפליקציה סגורה צריך אינטרנט במכשיר והתראות מאושרות. באייפון זה עובד רק מהאפליקציה המותקנת. במחשב, הדפדפן צריך לרוץ ברקע. מצב ״נא לא להפריע״ ומצב חיסכון בסוללה עלולים לעכב התראות.</p><button class="btn danger" data-s="reset">מחיקת כל הנתונים</button></div>';
+    h += '<div class="card"><h3>ℹ️ אודות</h3><p class="small" style="line-height:1.7">נוצר ע"י <b>יאיר גלעדי</b><br>"המרכז לבריאות טבעית"<br><a href="tel:0542135831" style="white-space:nowrap;direction:ltr;unicode-bidi:isolate;display:inline-block">054-2135831</a> - <a href="https://el-habriut.co.il" target="_blank" rel="noopener" style="white-space:nowrap;direction:ltr;unicode-bidi:isolate;display:inline-block">https://el-habriut.co.il</a></p><p class="small">תזכורות · בלי פרסומות · ' + state.list.length + ' פריטים שמורים.</p></div>';
+    h += '<details class="card adv"><summary style="cursor:pointer;font-weight:700">🔧 מתקדם</summary>' +
+      (dev && dev.lastSync ? '<p class="small">' + (NAT ? 'תזמון אחרון בטלפון: ' : 'סנכרון אחרון עם השרת: ') + esc(whenLabel(dev.lastSync)) + ' · ' + (dev.lastJobs || 0) + ' התראות מתוזמנות</p>' : '') +
+      '<div class="row" style="flex-wrap:wrap"><button class="btn" data-s="test30">בדיקה בעוד 30 שניות</button>' + (NAT ? '<button class="btn" data-s="setup">הגדרה מהירה</button><button class="btn" data-s="exact">שעון מדויק</button><button class="btn" data-s="autostart">הפעלה אוטומטית</button>' : '') + '</div>' +
+      '<p class="small">בבדיקה בעוד 30 שניות אפשר לסגור את האפליקציה ולראות שההתראה קופצת.' + (NAT ? ' בשיאומי צריך להדליק "הפעלה אוטומטית" לתזכורות.' : ' כדי שתזכורת תקפוץ כשהאפליקציה סגורה צריך אינטרנט והתראות מאושרות. במחשב הדפדפן צריך לרוץ ברקע.') + '</p>' +
+      '<p class="small" id="diag" style="direction:rtl">בודק מצב...</p><button class="btn danger" data-s="reset">מחיקת כל הנתונים</button></details>';
     var s = openSheet(h);
     diagnostics().then(function (t) { var d = $('#diag', s); if (d) d.textContent = t; });
     s.addEventListener('click', async function (e) {
