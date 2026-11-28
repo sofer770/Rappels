@@ -31,9 +31,17 @@
   var Store = {
     all: function () { return tx('rem', 'readonly', function (s) { return s.getAll(); }).then(function (l) { return l || []; }); },
     get: function (id) { return tx('rem', 'readonly', function (s) { return s.get(id); }); },
-    put: function (r) { return tx('rem', 'readwrite', function (s) { return s.put(r); }); },
-    putMany: function (list) { return tx('rem', 'readwrite', function (s) { list.forEach(function (r) { s.put(r); }); }); },
-    del: function (id) { return tx('rem', 'readwrite', function (s) { return s.delete(id); }); },
+    // כל שינוי מקבל חותמת זמן, כדי שהסנכרון בין מכשירים ידע מה חדש יותר
+    put: function (r) { r.updated = Date.now(); return tx('rem', 'readwrite', function (s) { return s.put(r); }); },
+    putMany: function (list) { var t = Date.now(); return tx('rem', 'readwrite', function (s) { list.forEach(function (r) { r.updated = t; s.put(r); }); }); },
+    del: function (id) {
+      return tx('rem', 'readwrite', function (s) { return s.delete(id); }).then(function () {
+        return Store.meta('tombs').then(function (t) { t = (t || []).filter(function (x) { return x.id !== id && x.updated > Date.now() - 90 * 864e5; }); t.push({ id: id, updated: Date.now() }); return Store.setMeta('tombs', t); });
+      });
+    },
+    // כתיבה של שינוי שהגיע ממכשיר אחר (בלי חותמת חדשה)
+    putRaw: function (r) { return tx('rem', 'readwrite', function (s) { return s.put(r); }); },
+    delRaw: function (id) { return tx('rem', 'readwrite', function (s) { return s.delete(id); }); },
     clear: function () { return tx('rem', 'readwrite', function (s) { return s.clear(); }); },
     meta: function (k) { return tx('meta', 'readonly', function (s) { return s.get(k); }); },
     setMeta: function (k, v) { return tx('meta', 'readwrite', function (s) { return s.put(v, k); }); }
