@@ -5,7 +5,7 @@ const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..')
 const out = path.join(root, 'www');
 fs.rmSync(out, { recursive: true, force: true });
 fs.mkdirSync(out);
-const files = ['index.html', 'styles.css', 'app.js', 'schedule.js', 'store.js', 'sounds.js', 'holidays.js', 'config.js', 'native.js', 'voice-note.js', 'location.js', 'manifest.json', 'logo.png', 'icon-192.png', 'badge.png', 'apple-touch-icon.png', 'icon-maskable-512.png'];
+const files = ['index.html', 'styles.css', 'app.js', 'schedule.js', 'store.js', 'sync.js', 'sounds.js', 'holidays.js', 'config.js', 'native.js', 'voice-note.js', 'location.js', 'manifest.json', 'logo.png', 'icon-192.png', 'badge.png', 'apple-touch-icon.png', 'icon-maskable-512.png'];
 for (const f of files) fs.copyFileSync(path.join(root, f), path.join(out, f));
 fs.copyFileSync(path.join(root, 'node_modules/@capacitor/core/dist/capacitor.js'), path.join(out, 'capacitor.js'));
 let html = fs.readFileSync(path.join(out, 'index.html'), 'utf8');
