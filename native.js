@@ -53,15 +53,6 @@
 
   function idFor(i) { return 1000 + i; }
 
-  // תזכורות לפי מיקום: נרשמות במערכת של הטלפון ומקפיצות התראה גם כשהאפליקציה סגורה
-  var GEO = C.registerPlugin('TzGeo');
-  async function syncFences(list, settings) {
-    var f = (list || []).filter(function (r) { return r && !r.done && !r.paused && !r.deleted && g.Sched.isLoc(r); }).map(function (r) {
-      return { id: 'loc-' + r.id + '-' + Math.round(r.loc.lat * 1e4) + '_' + Math.round(r.loc.lng * 1e4) + (r.loc.on === 'exit' ? 'x' : 'e') + (r.loc.every ? 'a' : '1'), rid: r.id, lat: r.loc.lat, lng: r.loc.lng, radius: r.loc.radius || 200, on: r.loc.on === 'exit' ? 'exit' : 'enter', exit: r.loc.on === 'exit', once: !r.loc.every,
-        title: r.title || 'תזכורת', notes: (r.notes || '').slice(0, 200), place: r.loc.name || '', sound: r.sound || (settings && settings.sound) || 'chime' };
-    });
-    try { await GEO.setFences({ fences: f }); } catch (e) {}
-  }
 
   // מתזמן מחדש את כל ההתראות לפי רשימת התזכורות
   async function schedule() {
@@ -92,7 +83,6 @@
         if (res && res.warning) last.error = 'שעון מדויק לא מאושר';
       }
       last = { at: Date.now(), count: items.length, error: last.error && items.length ? last.error : null, exact: await exact() };
-      await syncFences(list, settings);
       var dev = (await Store.meta('device')) || {};
       dev.lastSync = last.at; dev.lastJobs = items.length; dev.syncError = null;
       await Store.setMeta('device', dev);
@@ -159,7 +149,7 @@
   g.Store.sync = function () { return schedule(); };
 
   g.TZNative = {
-    perm: perm, request: request, schedule: schedule, test: test, diag: diag, exact: exact, openExact: openExact, openAutostart: openAutostart, geo: GEO, device: device, requestBattery: requestBattery, clearFor: clearFor, dictate: dictate,
+    perm: perm, request: request, schedule: schedule, test: test, diag: diag, exact: exact, openExact: openExact, openAutostart: openAutostart, device: device, requestBattery: requestBattery, clearFor: clearFor, dictate: dictate,
     onAction: function (fn) { handler = fn; var q = pending; pending = []; q.forEach(fn); }
   };
   setup();
